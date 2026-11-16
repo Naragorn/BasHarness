@@ -761,13 +761,18 @@ namespace BasHarness
                 yield return null;
             }
             hand.Grab(item.GetMainHandle(side), true);
+            // The step checks the grab itself, right after Grab and again one frame later: a mod under test may
+            // release it again on its next update (e.g. a disarmed NPC); whether the hand still holds it is
+            // for expect-npc holding to judge.
+            var grabbedAtOnce = item.handlers.Contains(hand);
             yield return null;
-            if (!item.handlers.Contains(hand))
+            var holdsNow = item.handlers.Contains(hand);
+            if (!grabbedAtOnce && !holdsNow)
             {
                 outcome.Fail("the NPC's " + side + " hand did not grab '" + step.Args[0] + "'");
                 yield break;
             }
-            outcome.Detail = side + " hand holds '" + item.data.id + "'";
+            outcome.Detail = side + " hand " + (holdsNow ? "holds '" : "grabbed and released again by the next frame '") + item.data.id + "'";
         }
 
         private static float Number(Step step, string key, float fallback)
