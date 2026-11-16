@@ -95,9 +95,9 @@ namespace BasHarness.Core
                 Validate = (a, n) => TryParseNumber(a[0], out _) ? null : "'" + a[0] + "' is not a number of degrees",
             },
             ["expect-player-speed"] = new Spec(1, 2, false) { Validate = (a, n) => SpeedRange(a) },
-            ["hit-npc"] = new Spec(1, 1, false, "velocity", "damage", "push", "type")
+            ["hit-npc"] = new Spec(1, 1, false, "velocity", "damage", "push", "type", "by", "item")
             {
-                Validate = (a, n) => NumberKey(n, "velocity") ?? NumberKey(n, "damage") ?? WholeKey(n, "push"),
+                Validate = (a, n) => NumberKey(n, "velocity") ?? NumberKey(n, "damage") ?? WholeKey(n, "push") ?? OneOf(n, "by", HitBy.Names),
             },
             ["expect-npc"] = new Spec(2, 2, false, "within")
             {
@@ -234,6 +234,13 @@ namespace BasHarness.Core
         {
             return named.TryGetValue(key, out var text) && !TryParseSeconds(text, out _)
                 ? key + ": '" + text + "' is not a number of seconds >= 0"
+                : null;
+        }
+
+        private static string OneOf(IReadOnlyDictionary<string, string> named, string key, IReadOnlyList<string> allowed)
+        {
+            return named.TryGetValue(key, out var text) && !allowed.Contains(text, StringComparer.OrdinalIgnoreCase)
+                ? key + ": '" + text + "' is not one of " + string.Join(", ", allowed)
                 : null;
         }
 

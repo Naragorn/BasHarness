@@ -17,6 +17,10 @@ python3 runner/bas_harness.py --mod /path/to/ModFolder [--mod ...] scenario.txt 
   installed under its DLL's name, which is the folder name the game saves mod options under).
 - Several scenarios run **in order in the same prefix**: that is how persistence across a restart
   is tested (part 1 sets and saves, part 2 starts a new game and checks).
+  **Option changes carry over to the next scenario even without `save-options`:** `Options.SetModOption`
+  marks the options dirty (`Options.isDirty = true`), and when the game quits the player menu's
+  `UIPlayerMenu.ManagedOnDisable` saves dirty options. So a scenario must not assume defaults unless it
+  sets them itself (or it is the first one after `--fresh-prefix`). Found by the Heel of Achilles scenarios.
 - Results: `artifacts/harness/<time>/<scenario>/` — `summary.md`, the run's `Player.log`,
   screenshots, `launch.txt`, `proton.log`. Exit code 0 = all PASS, 1 = FAIL, 2 = could not run.
 - `--window` shows the game in a normal window (debugging), `--fresh-prefix` starts with a new
@@ -64,7 +68,7 @@ the first FAIL; the game quits by itself at the end.
 | `stop-run` | stop moving |
 | `turn-player <degrees>` | turn the player on the spot (`Player.Teleport`), e.g. 180 to run back instead of into a wall |
 | `expect-player-speed <min> [max]` | `Locomotion.horizontalSpeed` (m/s) is in range within 5 s |
-| `hit-npc <RagdollPart.Type> [velocity=5] [damage=1] [push=-1] [type=Blunt]` | a hit by the player's right hand on that part of the spawned NPC through `Creature.Damage` (raises `onCreatureHit` OnStart/OnEnd); no physics contact. `type` = `DamageType` (Unknown, Pierce, Slash, Blunt, Energy, Fire, Lightning, UnBlockable). `push` = `DamageStruct.pushLevel`: the default -1 makes the game's own hit reaction skip its push, so a stagger afterwards came from the mod under test |
+| `hit-npc <RagdollPart.Type> [velocity=5] [damage=1] [push=-1] [type=Blunt] [by=hand] [item=DaggerCommon]` | a hit on that part of the spawned NPC through `Creature.Damage` (raises `onCreatureHit` OnStart/OnEnd); no physics contact. `by`: `hand` = the player's right hand (punch), `held` = a spawned `item` grabbed by that hand (`RagdollHand.Grab`), `thrown` = a spawned `item` nobody holds with `Item.lastHandler` = the player's hand, `spell` = `CollisionInstance.casterHand` = the hand's caster; spawned items are despawned after the hit. `type` = `DamageType` (Unknown, Pierce, Slash, Blunt, Energy, Fire, Lightning, UnBlockable). `push` = `DamageStruct.pushLevel`: the default -1 makes the game's own hit reaction skip its push, so a stagger afterwards came from the mod under test |
 | `expect-npc <stagger\|state\|staggered> <value> [within=2]` | the NPC's `Brain.currentStagger` (None/LightAndMedium/Full), `Creature.state` (Alive/Destabilized/Dead), or staggered (True/False: stagger not None or destabilized) reaches the value within the time |
 
 `<mod>` is the mod's folder name or manifest name.

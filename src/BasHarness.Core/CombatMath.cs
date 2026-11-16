@@ -45,6 +45,12 @@ namespace BasHarness.Core
         }
     }
 
+    /// <summary>What deals a <c>hit-npc</c>: the player's bare hand, an item held in it, an item the player threw, a spell.</summary>
+    public static class HitBy
+    {
+        public static readonly IReadOnlyList<string> Names = new[] { "hand", "held", "thrown", "spell" };
+    }
+
     /// <summary>The NPC properties <c>expect-npc</c> can check.</summary>
     public static class NpcProperty
     {

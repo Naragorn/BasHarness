@@ -14,7 +14,7 @@ public class CombatStepParserTests
             "run 1",
             "expect-player-speed 2.5",
             "expect-player-speed 0 0.5",
-            "hit-npc RightHand velocity=6 damage=1 push=0 type=Pierce",
+            "hit-npc RightHand velocity=6 damage=1 push=0 type=Pierce by=thrown item=DaggerCommon",
             "expect-npc staggered true within=1.5",
             "expect-npc stagger Full",
             "stop-run",
@@ -28,6 +28,7 @@ public class CombatStepParserTests
         Assert.Equal("1.5", s.Steps[5].Named["within"]);
         Assert.Equal("180", s.Steps[0].Named["facing"]);
         Assert.Equal("Pierce", s.Steps[4].Named["type"]);
+        Assert.Equal("thrown", s.Steps[4].Named["by"]);
     }
 
     [Theory]
@@ -47,6 +48,7 @@ public class CombatStepParserTests
     [InlineData("turn-player", "expects 1")]
     [InlineData("turn-player left", "'left' is not a number")]
     [InlineData("hit-npc", "expects 1")]
+    [InlineData("hit-npc Torso by=foot", "by: 'foot' is not one of hand, held, thrown, spell")]
     [InlineData("hit-npc Head velocity=x", "velocity: 'x' is not a number")]
     [InlineData("hit-npc Head push=1.5", "push: '1.5' is not a whole number")]
     [InlineData("expect-npc staggered", "expects 2")]

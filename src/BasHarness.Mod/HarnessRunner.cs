@@ -171,8 +171,7 @@ namespace BasHarness
                 case "expect-player-speed":
                     return ExpectPlayerSpeed(step, outcome);
                 case "hit-npc":
-                    HitNpc(step, outcome);
-                    return Nothing();
+                    return HitNpc(step, outcome);
                 case "expect-npc":
                     return ExpectNpc(step, outcome);
                 default:
@@ -553,58 +552,114 @@ namespace BasHarness
         /// (BrainModuleHitReaction.TryPush returns on pushLevel &lt; 0), so a stagger seen afterwards came
         /// from the mod under test.
         /// </summary>
-        private void HitNpc(Step step, Outcome outcome)
+        private const string DefaultHitItem = "DaggerCommon";
+
+        private IEnumerator HitNpc(Step step, Outcome outcome)
         {
             if (_npc == null || _npc.isKilled)
             {
                 outcome.Fail(_npc == null ? "no NPC (spawn-npc first)" : "the NPC is dead");
-                return;
+                yield break;
             }
             if (!Enum.TryParse(step.Args[0], true, out RagdollPart.Type type))
             {
                 outcome.Fail("'" + step.Args[0] + "' is not a body part (" + string.Join(", ", Enum.GetNames(typeof(RagdollPart.Type))) + ")");
-                return;
+                yield break;
             }
             var part = _npc.ragdoll.GetPart(type);
             if (part == null)
             {
                 outcome.Fail("the NPC has no " + type);
-                return;
+                yield break;
             }
             var hand = Player.local?.creature?.handRight;
             if (hand == null)
             {
                 outcome.Fail("no player hand");
-                return;
+                yield break;
             }
             var damageType = DamageType.Blunt;
             if (step.Named.TryGetValue("type", out var typeText) && !Enum.TryParse(typeText, true, out damageType))
             {
                 outcome.Fail("'" + typeText + "' is not a DamageType (" + string.Join(", ", Enum.GetNames(typeof(DamageType))) + ")");
-                return;
+                yield break;
             }
+            var by = step.Named.TryGetValue("by", out var byText) ? byText.ToLowerInvariant() : "hand";
+
+            // What deals the hit: the hand itself, or a spawned item held in it / last held by it.
+            Item item = null;
+            if (by == "held" || by == "thrown")
+            {
+                var itemId = step.Named.TryGetValue("item", out var itemText) ? itemText : DefaultHitItem;
+                var data = Catalog.GetData<ItemData>(itemId);
+                if (data == null)
+                {
+                    outcome.Fail("no ItemData '" + itemId + "' in the catalog");
+                    yield break;
+                }
+                data.SpawnAsync(i => item = i, hand.transform.position, hand.transform.rotation, null, false, null);
+                var start = Time.realtimeSinceStartup;
+                while (item == null)
+                {
+                    if (Time.realtimeSinceStartup - start > SpawnTimeout)
+                    {
+                        outcome.Fail("item '" + itemId + "' not spawned");
+                        yield break;
+                    }
+                    yield return null;
+                }
+                if (by == "held")
+                {
+                    hand.Grab(item.GetMainHandle(Side.Right), true);
+                    yield return null;
+                    if (!item.handlers.Contains(hand))
+                    {
+                        outcome.Fail("the player's hand did not grab '" + itemId + "'");
+                        item.Despawn();
+                        yield break;
+                    }
+                }
+                else
+                {
+                    // A thrown item: nobody holds it, the player was the last to (what Item.lastHandler records).
+                    item.lastHandler = hand;
+                }
+            }
+
             var velocity = Number(step, "velocity", 5f);
             var damage = Number(step, "damage", 1f);
             var push = step.Named.TryGetValue("push", out var pushText) ? int.Parse(pushText, CultureInfo.InvariantCulture) : -1;
             var direction = (part.transform.position - hand.transform.position).normalized;
+            var damager = item != null ? item.mainCollisionHandler?.damagers?.FirstOrDefault() : (by == "spell" ? null : hand.bodyDamager);
+            var sourceGroup = item != null ? (damager?.colliderGroup ?? item.colliderGroups.FirstOrDefault()) : (by == "spell" ? null : hand.colliderGroup);
             var hit = new CollisionInstance(new DamageStruct(damageType, damage)
             {
-                damager = hand.bodyDamager,
+                damager = damager,
                 hitRagdollPart = part,
                 pushLevel = push,
             })
             {
-                sourceColliderGroup = hand.colliderGroup,
+                sourceColliderGroup = sourceGroup,
                 targetColliderGroup = part.colliderGroup,
                 impactVelocity = direction * velocity,
                 contactPoint = part.transform.position,
                 contactNormal = -direction,
+                casterHand = by == "spell" ? hand.caster : null,
             };
             var before = _npc.currentHealth;
             _npc.Damage(hit);
-            outcome.Detail = type + " " + damageType + " hit at " + velocity.ToString("0.#", CultureInfo.InvariantCulture) + " m/s, health "
+            outcome.Detail = type + " " + damageType + " hit by " + by + (item != null ? " '" + item.data.id + "'" : string.Empty)
+                + " at " + velocity.ToString("0.#", CultureInfo.InvariantCulture) + " m/s, health "
                 + before.ToString("0.#", CultureInfo.InvariantCulture) + " -> " + _npc.currentHealth.ToString("0.#", CultureInfo.InvariantCulture)
                 + ", player speed " + (Player.local?.locomotion?.horizontalSpeed ?? 0f).ToString("0.00", CultureInfo.InvariantCulture) + " m/s";
+            if (item != null)
+            {
+                if (by == "held")
+                {
+                    hand.UnGrab(false);
+                }
+                item.Despawn();
+            }
         }
 
         private IEnumerator ExpectNpc(Step step, Outcome outcome)
