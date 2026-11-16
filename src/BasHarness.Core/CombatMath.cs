@@ -54,8 +54,11 @@ namespace BasHarness.Core
     /// <summary>The NPC properties <c>expect-npc</c> can check.</summary>
     public static class NpcProperty
     {
-        /// <summary>stagger = Brain.currentStagger, state = Creature.state, staggered = stagger != None or ragdoll destabilized.</summary>
-        public static readonly IReadOnlyList<string> Names = new[] { "stagger", "state", "staggered" };
+        /// <summary>
+        /// stagger = Brain.currentStagger, state = Creature.state, staggered = stagger != None or ragdoll destabilized,
+        /// holding = either hand holds an item (True/False), brain = the loaded brain's id.
+        /// </summary>
+        public static readonly IReadOnlyList<string> Names = new[] { "stagger", "state", "staggered", "holding", "brain" };
 
         public static bool IsKnown(string name)
         {

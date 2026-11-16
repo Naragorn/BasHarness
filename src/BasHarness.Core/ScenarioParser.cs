@@ -90,6 +90,7 @@ namespace BasHarness.Core
             },
             ["run"] = new Spec(1, 1, false) { Validate = (a, n) => RunRatio(a[0]) },
             ["stop-run"] = new Spec(0, 0, false),
+            ["npc-grab"] = new Spec(1, 1, false, "hand") { Validate = (a, n) => OneOf(n, "hand", new[] { "left", "right" }) },
             ["turn-player"] = new Spec(1, 1, false)
             {
                 Validate = (a, n) => TryParseNumber(a[0], out _) ? null : "'" + a[0] + "' is not a number of degrees",

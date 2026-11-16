@@ -172,6 +172,8 @@ namespace BasHarness
                     return ExpectPlayerSpeed(step, outcome);
                 case "hit-npc":
                     return HitNpc(step, outcome);
+                case "npc-grab":
+                    return NpcGrab(step, outcome);
                 case "expect-npc":
                     return ExpectNpc(step, outcome);
                 default:
@@ -700,6 +702,10 @@ namespace BasHarness
                     return (npc.brain != null ? npc.brain.currentStagger : Brain.Stagger.None).ToString();
                 case "state":
                     return npc.state.ToString();
+                case "holding":
+                    return (Holds(npc.handLeft) || Holds(npc.handRight)) ? "True" : "False";
+                case "brain":
+                    return npc.brain?.instance?.id ?? "none";
                 default:
                     var staggered = (npc.brain != null && npc.brain.currentStagger != Brain.Stagger.None) || npc.state == Creature.State.Destabilized;
                     return staggered ? "True" : "False";
@@ -708,7 +714,60 @@ namespace BasHarness
 
         private static string NpcSummary(Creature npc)
         {
-            return "stagger " + (npc.brain != null ? npc.brain.currentStagger : Brain.Stagger.None) + ", state " + npc.state;
+            return "stagger " + (npc.brain != null ? npc.brain.currentStagger : Brain.Stagger.None) + ", state " + npc.state
+                + ", holding L '" + HeldId(npc.handLeft) + "' R '" + HeldId(npc.handRight) + "', brain " + (npc.brain?.instance?.id ?? "none");
+        }
+
+        private static bool Holds(RagdollHand hand)
+        {
+            return hand != null && hand.grabbedHandle != null && hand.grabbedHandle.item != null;
+        }
+
+        private static string HeldId(RagdollHand hand)
+        {
+            return Holds(hand) ? hand.grabbedHandle.item.data?.id ?? "?" : "-";
+        }
+
+        /// <summary>Puts a spawned item into the NPC's hand (RagdollHand.Grab, teleported to the hand).</summary>
+        private IEnumerator NpcGrab(Step step, Outcome outcome)
+        {
+            if (_npc == null || _npc.isKilled)
+            {
+                outcome.Fail(_npc == null ? "no NPC (spawn-npc first)" : "the NPC is dead");
+                yield break;
+            }
+            var side = step.Named.TryGetValue("hand", out var handText) && handText.Equals("left", StringComparison.OrdinalIgnoreCase) ? Side.Left : Side.Right;
+            var hand = _npc.GetHand(side);
+            var data = Catalog.GetData<ItemData>(step.Args[0]);
+            if (data == null || hand == null)
+            {
+                outcome.Fail(data == null ? "no ItemData '" + step.Args[0] + "' in the catalog" : "the NPC has no " + side + " hand");
+                yield break;
+            }
+            if (Holds(hand))
+            {
+                hand.TryRelease();
+            }
+            Item item = null;
+            data.SpawnAsync(i => item = i, hand.transform.position, hand.transform.rotation, null, false, null);
+            var start = Time.realtimeSinceStartup;
+            while (item == null)
+            {
+                if (Time.realtimeSinceStartup - start > SpawnTimeout)
+                {
+                    outcome.Fail("item '" + step.Args[0] + "' not spawned");
+                    yield break;
+                }
+                yield return null;
+            }
+            hand.Grab(item.GetMainHandle(side), true);
+            yield return null;
+            if (!item.handlers.Contains(hand))
+            {
+                outcome.Fail("the NPC's " + side + " hand did not grab '" + step.Args[0] + "'");
+                yield break;
+            }
+            outcome.Detail = side + " hand holds '" + item.data.id + "'";
         }
 
         private static float Number(Step step, string key, float fallback)

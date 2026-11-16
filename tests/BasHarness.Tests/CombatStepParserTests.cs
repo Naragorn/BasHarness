@@ -19,10 +19,14 @@ public class CombatStepParserTests
             "expect-npc stagger Full",
             "stop-run",
             "turn-player 180",
-            "turn-player -90"));
+            "turn-player -90",
+            "npc-grab DaggerCommon",
+            "npc-grab SwordShortCommon hand=left",
+            "expect-npc holding true",
+            "expect-npc brain HumanDummy"));
 
         Assert.Empty(s.Errors);
-        Assert.Equal(new[] { "spawn-npc", "run", "expect-player-speed", "expect-player-speed", "hit-npc", "expect-npc", "expect-npc", "stop-run", "turn-player", "turn-player" },
+        Assert.Equal(new[] { "spawn-npc", "run", "expect-player-speed", "expect-player-speed", "hit-npc", "expect-npc", "expect-npc", "stop-run", "turn-player", "turn-player", "npc-grab", "npc-grab", "expect-npc", "expect-npc" },
             s.Steps.Select(x => x.Verb));
         Assert.Equal("HumanMedium", s.Steps[0].Named["brain"]);
         Assert.Equal("1.5", s.Steps[5].Named["within"]);
@@ -47,6 +51,8 @@ public class CombatStepParserTests
     [InlineData("expect-player-speed 3 2", "max 2 is below min 3")]
     [InlineData("turn-player", "expects 1")]
     [InlineData("turn-player left", "'left' is not a number")]
+    [InlineData("npc-grab", "expects 1")]
+    [InlineData("npc-grab DaggerCommon hand=both", "hand: 'both' is not one of left, right")]
     [InlineData("hit-npc", "expects 1")]
     [InlineData("hit-npc Torso by=foot", "by: 'foot' is not one of hand, held, thrown, spell")]
     [InlineData("hit-npc Head velocity=x", "velocity: 'x' is not a number")]
