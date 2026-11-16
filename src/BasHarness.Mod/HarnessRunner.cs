@@ -558,7 +558,8 @@ namespace BasHarness
 
         private IEnumerator HitNpc(Step step, Outcome outcome)
         {
-            if (_npc == null || _npc.isKilled)
+            var allowDead = step.Named.TryGetValue("dead", out var deadText) && deadText.Equals("true", StringComparison.OrdinalIgnoreCase);
+            if (_npc == null || (_npc.isKilled && !allowDead))
             {
                 outcome.Fail(_npc == null ? "no NPC (spawn-npc first)" : "the NPC is dead");
                 yield break;
@@ -631,9 +632,21 @@ namespace BasHarness
             var velocity = Number(step, "velocity", 5f);
             var damage = Number(step, "damage", 1f);
             var push = step.Named.TryGetValue("push", out var pushText) ? int.Parse(pushText, CultureInfo.InvariantCulture) : -1;
-            var direction = (part.transform.position - hand.transform.position).normalized;
-            var damager = item != null ? item.mainCollisionHandler?.damagers?.FirstOrDefault() : (by == "spell" ? null : hand.bodyDamager);
-            var sourceGroup = item != null ? (damager?.colliderGroup ?? item.colliderGroups.FirstOrDefault()) : (by == "spell" ? null : hand.colliderGroup);
+            // A kick: the player's right foot part deals it (its own damager, e.g. the game's Kick).
+            var foot = by == "foot" ? Player.local.creature.ragdoll.GetPart(RagdollPart.Type.RightFoot) : null;
+            if (by == "foot" && foot == null)
+            {
+                outcome.Fail("the player has no right foot part");
+                yield break;
+            }
+            var from = foot != null ? foot.transform.position : hand.transform.position;
+            var direction = (part.transform.position - from).normalized;
+            var damager = item != null
+                ? item.mainCollisionHandler?.damagers?.FirstOrDefault()
+                : foot != null ? foot.collisionHandler?.damagers?.FirstOrDefault() : (by == "spell" ? null : hand.bodyDamager);
+            var sourceGroup = item != null
+                ? (damager?.colliderGroup ?? item.colliderGroups.FirstOrDefault())
+                : foot != null ? foot.colliderGroup : (by == "spell" ? null : hand.colliderGroup);
             var hit = new CollisionInstance(new DamageStruct(damageType, damage)
             {
                 damager = damager,

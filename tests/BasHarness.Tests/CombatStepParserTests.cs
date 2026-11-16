@@ -35,6 +35,16 @@ public class CombatStepParserTests
         Assert.Equal("thrown", s.Steps[4].Named["by"]);
     }
 
+    [Fact]
+    public void HitNpc_TakesAKick_AndMayHitADeadNpc()
+    {
+        var s = ScenarioParser.Parse("wait-level\nhit-npc Torso by=foot velocity=9 dead=true");
+
+        Assert.Empty(s.Errors);
+        Assert.Equal("foot", s.Steps[1].Named["by"]);
+        Assert.Equal("true", s.Steps[1].Named["dead"]);
+    }
+
     [Theory]
     [InlineData("spawn-npc", "expects 1")]
     [InlineData("spawn-npc HumanMale distance=far", "distance: 'far' is not a number")]
@@ -54,7 +64,8 @@ public class CombatStepParserTests
     [InlineData("npc-grab", "expects 1")]
     [InlineData("npc-grab DaggerCommon hand=both", "hand: 'both' is not one of left, right")]
     [InlineData("hit-npc", "expects 1")]
-    [InlineData("hit-npc Torso by=foot", "by: 'foot' is not one of hand, held, thrown, spell")]
+    [InlineData("hit-npc Torso by=elbow", "by: 'elbow' is not one of hand, held, thrown, spell, foot")]
+    [InlineData("hit-npc Torso dead=maybe", "dead: 'maybe' is not one of true, false")]
     [InlineData("hit-npc Head velocity=x", "velocity: 'x' is not a number")]
     [InlineData("hit-npc Head push=1.5", "push: '1.5' is not a whole number")]
     [InlineData("expect-npc staggered", "expects 2")]

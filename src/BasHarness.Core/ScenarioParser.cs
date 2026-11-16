@@ -103,9 +103,10 @@ namespace BasHarness.Core
                 Validate = (a, n) => TryParseNumber(a[0], out _) ? null : "'" + a[0] + "' is not a number of degrees",
             },
             ["expect-player-speed"] = new Spec(1, 2, false) { Validate = (a, n) => SpeedRange(a) },
-            ["hit-npc"] = new Spec(1, 1, false, "velocity", "damage", "push", "type", "by", "item")
+            ["hit-npc"] = new Spec(1, 1, false, "velocity", "damage", "push", "type", "by", "item", "dead")
             {
-                Validate = (a, n) => NumberKey(n, "velocity") ?? NumberKey(n, "damage") ?? WholeKey(n, "push") ?? OneOf(n, "by", HitBy.Names),
+                Validate = (a, n) => NumberKey(n, "velocity") ?? NumberKey(n, "damage") ?? WholeKey(n, "push") ?? OneOf(n, "by", HitBy.Names)
+                    ?? OneOf(n, "dead", new[] { "true", "false" }),
             },
             ["expect-npc"] = new Spec(2, 2, false, "within")
             {
