@@ -1,0 +1,9 @@
+# Heel of Achilles: loads headless, its script starts, it has its mod options, the level runs.
+# Run: python3 runner/bas_harness.py --fresh-prefix --mod ../AchillesBAS/dist/AchillesTendon scenarios/achilles-smoke.txt
+wait-level
+expect-log [ModManager][ModOption][AchillesTendon] Loaded 11 ModOptions
+expect-log [AchillesTendon] Loaded Heel of Achilles
+expect-log [ModManager][ThunderScript][AchillesTendon] Loaded ThunderScript: AchillesTendon.AchillesTendonScript
+expect-no-log Exception
+screenshot achilles-arena
+quit

@@ -1,0 +1,7 @@
+{
+    "Name": "BasHarness",
+    "Description": "Headless test harness. Inert unless started by the BasHarness runner.",
+    "Author": "Nadi",
+    "ModVersion": "0.1.0",
+    "GameVersion": "1.0.0.0"
+}

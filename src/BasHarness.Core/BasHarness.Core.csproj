@@ -1,0 +1,9 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!-- Pure scenario logic (no game references), compiled into BasHarness.dll and unit-tested on its own. -->
+  <PropertyGroup>
+    <TargetFramework>netstandard2.0</TargetFramework>
+    <RootNamespace>BasHarness.Core</RootNamespace>
+  </PropertyGroup>
+
+</Project>

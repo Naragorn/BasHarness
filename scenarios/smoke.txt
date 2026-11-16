@@ -1,0 +1,5 @@
+# Any mod: the game reaches the level with it loaded and nothing threw.
+wait-level
+expect-no-log Exception
+screenshot smoke
+quit
