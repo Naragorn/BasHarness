@@ -10,11 +10,11 @@ public class CombatStepParserTests
     public void CombatVerbs_ParseWithTheirArguments()
     {
         var s = ScenarioParser.Parse(string.Join("\n",
-            "spawn-npc HumanMale distance=3 angle=180 brain=HumanMedium",
+            "spawn-npc HumanMale distance=3 angle=180 brain=HumanMedium facing=180",
             "run 1",
             "expect-player-speed 2.5",
             "expect-player-speed 0 0.5",
-            "hit-npc RightHand velocity=6 damage=1 push=0",
+            "hit-npc RightHand velocity=6 damage=1 push=0 type=Pierce",
             "expect-npc staggered true within=1.5",
             "expect-npc stagger Full",
             "stop-run",
@@ -26,6 +26,8 @@ public class CombatStepParserTests
             s.Steps.Select(x => x.Verb));
         Assert.Equal("HumanMedium", s.Steps[0].Named["brain"]);
         Assert.Equal("1.5", s.Steps[5].Named["within"]);
+        Assert.Equal("180", s.Steps[0].Named["facing"]);
+        Assert.Equal("Pierce", s.Steps[4].Named["type"]);
     }
 
     [Theory]
@@ -33,6 +35,7 @@ public class CombatStepParserTests
     [InlineData("spawn-npc HumanMale distance=far", "distance: 'far' is not a number")]
     [InlineData("spawn-npc HumanMale angle=x", "angle: 'x' is not a number")]
     [InlineData("spawn-npc HumanMale colour=red", "unknown key 'colour'")]
+    [InlineData("spawn-npc HumanMale facing=back", "facing: 'back' is not a number")]
     [InlineData("run", "expects 1")]
     [InlineData("run fast", "is not a number")]
     [InlineData("run 1.5", "between 0 and 1")]
@@ -61,6 +64,16 @@ public class CombatStepParserTests
 
 public class CombatMathTests
 {
+    [Theory]
+    [InlineData(90, 0, 90)]
+    [InlineData(90, 180, 270)]
+    [InlineData(270, 180, 90)]
+    [InlineData(10, -30, 340)]
+    public void FacingYaw_TurnsFromLookingAtThePlayer(float lookAtPlayer, float facing, float expected)
+    {
+        Assert.Equal(expected, CombatMath.FacingYaw(lookAtPlayer, facing), 3);
+    }
+
     [Theory]
     [InlineData(0, 1, 0, 2, 0, 2)]     // straight ahead
     [InlineData(0, 1, 180, 2, 0, -2)]  // behind

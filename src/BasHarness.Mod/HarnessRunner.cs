@@ -427,10 +427,11 @@ namespace BasHarness
             var forward = player.transform.forward;
             var (x, z) = CombatMath.OffsetXZ(forward.x, forward.z, angle, distance);
             var position = player.transform.position + new Vector3(x, 0f, z);
-            var facePlayer = Quaternion.LookRotation(new Vector3(-x, 0f, -z)).eulerAngles.y;
+            var facing = Number(step, "facing", 0f);
+            var yaw = CombatMath.FacingYaw(Quaternion.LookRotation(new Vector3(-x, 0f, -z)).eulerAngles.y, facing);
 
             Creature spawned = null;
-            GameManager.local.StartCoroutine(data.SpawnCoroutine(position, facePlayer, null, c => spawned = c));
+            GameManager.local.StartCoroutine(data.SpawnCoroutine(position, yaw, null, c => spawned = c));
             var start = Time.realtimeSinceStartup;
             while (spawned == null || !spawned.loaded)
             {
@@ -451,7 +452,8 @@ namespace BasHarness
             var hitReaction = spawned.brain?.instance?.GetModule<BrainModuleHitReaction>(autoAddModuleIfMissing: false) != null;
             outcome.Detail = "'" + spawned.data.id + "' brain '" + (spawned.brain?.instance?.id ?? "none") + "'"
                 + (hitReaction ? " with" : " WITHOUT") + " BrainModuleHitReaction, "
-                + Vector3.Distance(player.transform.position, spawned.transform.position).ToString("0.0", CultureInfo.InvariantCulture) + " m away";
+                + Vector3.Distance(player.transform.position, spawned.transform.position).ToString("0.0", CultureInfo.InvariantCulture) + " m away, "
+                + "turned " + Vector3.SignedAngle(new Vector3(-x, 0f, -z), spawned.transform.forward, Vector3.up).ToString("0", CultureInfo.InvariantCulture) + " deg from facing the player";
         }
 
         /// <summary>
@@ -575,11 +577,17 @@ namespace BasHarness
                 outcome.Fail("no player hand");
                 return;
             }
+            var damageType = DamageType.Blunt;
+            if (step.Named.TryGetValue("type", out var typeText) && !Enum.TryParse(typeText, true, out damageType))
+            {
+                outcome.Fail("'" + typeText + "' is not a DamageType (" + string.Join(", ", Enum.GetNames(typeof(DamageType))) + ")");
+                return;
+            }
             var velocity = Number(step, "velocity", 5f);
             var damage = Number(step, "damage", 1f);
             var push = step.Named.TryGetValue("push", out var pushText) ? int.Parse(pushText, CultureInfo.InvariantCulture) : -1;
             var direction = (part.transform.position - hand.transform.position).normalized;
-            var hit = new CollisionInstance(new DamageStruct(DamageType.Blunt, damage)
+            var hit = new CollisionInstance(new DamageStruct(damageType, damage)
             {
                 damager = hand.bodyDamager,
                 hitRagdollPart = part,
@@ -594,7 +602,7 @@ namespace BasHarness
             };
             var before = _npc.currentHealth;
             _npc.Damage(hit);
-            outcome.Detail = type + " hit at " + velocity.ToString("0.#", CultureInfo.InvariantCulture) + " m/s, health "
+            outcome.Detail = type + " " + damageType + " hit at " + velocity.ToString("0.#", CultureInfo.InvariantCulture) + " m/s, health "
                 + before.ToString("0.#", CultureInfo.InvariantCulture) + " -> " + _npc.currentHealth.ToString("0.#", CultureInfo.InvariantCulture)
                 + ", player speed " + (Player.local?.locomotion?.horizontalSpeed ?? 0f).ToString("0.00", CultureInfo.InvariantCulture) + " m/s";
         }

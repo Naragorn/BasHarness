@@ -28,6 +28,16 @@ namespace BasHarness.Core
             return ((float)(x * distance), (float)(z * distance));
         }
 
+        /// <summary>
+        /// Yaw for an NPC turned <paramref name="facing"/> degrees (clockwise) away from looking at the
+        /// player: 0 = faces the player, 180 = back to the player. Result in [0, 360).
+        /// </summary>
+        public static float FacingYaw(float lookAtPlayerYaw, float facing)
+        {
+            var yaw = (lookAtPlayerYaw + facing) % 360f;
+            return yaw < 0f ? yaw + 360f : yaw;
+        }
+
         /// <summary>min &lt;= value (&lt;= max, when a max is given).</summary>
         public static bool InRange(float value, float min, float? max)
         {

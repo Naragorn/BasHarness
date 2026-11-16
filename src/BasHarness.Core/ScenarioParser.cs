@@ -84,9 +84,9 @@ namespace BasHarness.Core
             ["save-options"] = new Spec(0, 0, false),
             ["screenshot"] = new Spec(1, 1, false),
             ["quit"] = new Spec(0, 0, false),
-            ["spawn-npc"] = new Spec(1, 1, false, "distance", "angle", "brain")
+            ["spawn-npc"] = new Spec(1, 1, false, "distance", "angle", "brain", "facing")
             {
-                Validate = (a, n) => NumberKey(n, "distance") ?? NumberKey(n, "angle"),
+                Validate = (a, n) => NumberKey(n, "distance") ?? NumberKey(n, "angle") ?? NumberKey(n, "facing"),
             },
             ["run"] = new Spec(1, 1, false) { Validate = (a, n) => RunRatio(a[0]) },
             ["stop-run"] = new Spec(0, 0, false),
@@ -95,7 +95,7 @@ namespace BasHarness.Core
                 Validate = (a, n) => TryParseNumber(a[0], out _) ? null : "'" + a[0] + "' is not a number of degrees",
             },
             ["expect-player-speed"] = new Spec(1, 2, false) { Validate = (a, n) => SpeedRange(a) },
-            ["hit-npc"] = new Spec(1, 1, false, "velocity", "damage", "push")
+            ["hit-npc"] = new Spec(1, 1, false, "velocity", "damage", "push", "type")
             {
                 Validate = (a, n) => NumberKey(n, "velocity") ?? NumberKey(n, "damage") ?? WholeKey(n, "push"),
             },

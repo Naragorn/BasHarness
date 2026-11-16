@@ -19,5 +19,8 @@ expect-npc staggered false within=0
 wait 3
 hit-npc Torso velocity=5 damage=1 push=1
 expect-npc staggered true
+# damage type and NPC facing
+spawn-npc HumanMale distance=3 angle=90 facing=180 brain=HumanDummy
+hit-npc LeftFoot type=Pierce
 screenshot combat-smoke
 quit
