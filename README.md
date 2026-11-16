@@ -61,7 +61,7 @@ the first FAIL; the game quits by itself at the end.
 | `press <mod> <name>` | press a button option (next value, wrapping, like the mods page) |
 | `expect-option <mod> <name> <value>` | the menu value **and** the member it drives hold `<value>` |
 | `save-options` | save options the way closing the player menu does |
-| `screenshot <name>` | PNG of the game view into the run folder |
+| `screenshot <name> [of=npc] [distance=2.5] [height=1.2] [angle=0]` | PNG of the game view into the run folder. With `of=npc`: a picture of the spawned NPC from a temporary camera `distance` m from its root part, `height` m above it, `angle` degrees clockwise around it from the player's side, looking at it (the game view follows the player's head and often misses an NPC lying at its feet) |
 | `quit` | end here |
 | `spawn-npc <creatureId> [distance=2] [angle=0] [facing=0] [brain=<id>]` | spawn an NPC the way the book's spawner does, `distance` m from the player, `angle` degrees clockwise from where the player faces, turned `facing` degrees clockwise away from looking at the player (180 = back to the player); waits until loaded; fails if a requested brain did not load. `brain=HumanDummy` stands still and still staggers (has `BrainModuleHitReaction`) |
 | `run <0..1>` | keep the player moving forward through the game's own locomotion (`Locomotion.MoveWeighted`, the gamepad's call); the number is the run share, 0 = walk (2.8 m/s in the Arena), 1 = full sprint (6.0 m/s) |

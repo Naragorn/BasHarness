@@ -157,7 +157,7 @@ namespace BasHarness
                     // What closing the player menu does when an option changed (UIPlayerMenu.ManagedOnDisable).
                     return Options.SaveCoroutine();
                 case "screenshot":
-                    return Screenshot(step.Args[0], outcome);
+                    return step.Named.ContainsKey("of") ? NpcScreenshot(step, outcome) : Screenshot(step.Args[0], outcome);
                 case "spawn-npc":
                     return SpawnNpc(step, outcome);
                 case "run":
@@ -778,6 +778,66 @@ namespace BasHarness
         private static float Number(Step step, string key, float fallback)
         {
             return step.Named.TryGetValue(key, out var text) && ScenarioParser.TryParseNumber(text, out var value) ? value : fallback;
+        }
+
+        /// <summary>
+        /// A picture of the spawned NPC from a temporary camera next to it, rendered into a
+        /// texture (the game view follows the player's head and often misses an NPC lying at
+        /// its feet). The camera stands `distance` m from the NPC's root part, `height` m above
+        /// it, `angle` degrees clockwise around it from the player's side, and looks at it.
+        /// </summary>
+        private IEnumerator NpcScreenshot(Step step, Outcome outcome)
+        {
+            if (_npc == null || _npc.ragdoll == null || _npc.ragdoll.rootPart == null)
+            {
+                outcome.Fail("no spawned NPC to photograph (spawn-npc first)");
+                yield break;
+            }
+            const int Width = 1280;
+            const int Height = 720;
+            var target = _npc.ragdoll.rootPart.transform.position;
+            var side = Player.local != null && Player.local.creature != null
+                ? Player.local.creature.transform.position - target
+                : Vector3.forward;
+            side.y = 0f;
+            side = side.sqrMagnitude > 1e-4f ? side.normalized : Vector3.forward;
+            side = Quaternion.Euler(0f, Number(step, "angle", 0f), 0f) * side;
+
+            var cameraObject = new GameObject("BasHarnessNpcCamera");
+            var renderTexture = new RenderTexture(Width, Height, 24);
+            Texture2D picture = null;
+            try
+            {
+                var camera = cameraObject.AddComponent<Camera>();
+                camera.transform.position = target + side * Number(step, "distance", 2.5f) + Vector3.up * Number(step, "height", 1.2f);
+                camera.transform.LookAt(target);
+                camera.fieldOfView = 60f;
+                camera.nearClipPlane = 0.05f;
+                camera.targetTexture = renderTexture;
+                // Let the render pipeline draw the camera once, then read it back.
+                yield return null;
+                yield return new WaitForEndOfFrame();
+                var previous = RenderTexture.active;
+                RenderTexture.active = renderTexture;
+                picture = new Texture2D(Width, Height, TextureFormat.RGB24, false);
+                picture.ReadPixels(new Rect(0, 0, Width, Height), 0, 0);
+                picture.Apply();
+                RenderTexture.active = previous;
+                Directory.CreateDirectory(_outputDir);
+                var path = Path.Combine(_outputDir, step.Args[0] + ".png");
+                File.WriteAllBytes(path, picture.EncodeToPNG());
+                outcome.Detail = path + " (camera " + camera.transform.position.ToString("F2") + " looking at NPC root " + target.ToString("F2") + ")";
+            }
+            finally
+            {
+                UnityEngine.Object.Destroy(cameraObject);
+                renderTexture.Release();
+                UnityEngine.Object.Destroy(renderTexture);
+                if (picture != null)
+                {
+                    UnityEngine.Object.Destroy(picture);
+                }
+            }
         }
 
         private IEnumerator Screenshot(string name, Outcome outcome)

@@ -82,7 +82,14 @@ namespace BasHarness.Core
             ["press"] = new Spec(2, 2, false),
             ["expect-option"] = new Spec(3, 3, false),
             ["save-options"] = new Spec(0, 0, false),
-            ["screenshot"] = new Spec(1, 1, false),
+            ["screenshot"] = new Spec(1, 1, false, "of", "distance", "height", "angle")
+            {
+                Validate = (a, n) => OneOf(n, "of", new[] { "npc" })
+                    ?? NumberKey(n, "distance") ?? NumberKey(n, "height") ?? NumberKey(n, "angle")
+                    ?? (!n.ContainsKey("of") && (n.ContainsKey("distance") || n.ContainsKey("height") || n.ContainsKey("angle"))
+                        ? "distance, height and angle need of=npc"
+                        : null),
+            },
             ["quit"] = new Spec(0, 0, false),
             ["spawn-npc"] = new Spec(1, 1, false, "distance", "angle", "brain", "facing")
             {
