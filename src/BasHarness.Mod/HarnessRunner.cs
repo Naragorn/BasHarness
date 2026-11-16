@@ -23,6 +23,8 @@ namespace BasHarness
         private readonly string _outputDir;
         private readonly LogCursor _cursor = new LogCursor();
         private bool _calibrationSkipped;
+        private Creature _npc;
+        private float _runRatio = -1f;
 
         public HarnessRunner(string scenarioPath, string outputDir)
         {
@@ -156,6 +158,23 @@ namespace BasHarness
                     return Options.SaveCoroutine();
                 case "screenshot":
                     return Screenshot(step.Args[0], outcome);
+                case "spawn-npc":
+                    return SpawnNpc(step, outcome);
+                case "run":
+                    return Run(step, outcome);
+                case "stop-run":
+                    StopRun(outcome);
+                    return Nothing();
+                case "turn-player":
+                    TurnPlayer(step, outcome);
+                    return Nothing();
+                case "expect-player-speed":
+                    return ExpectPlayerSpeed(step, outcome);
+                case "hit-npc":
+                    HitNpc(step, outcome);
+                    return Nothing();
+                case "expect-npc":
+                    return ExpectNpc(step, outcome);
                 default:
                     outcome.Fail("verb not implemented in the game: " + step.Verb);
                     return Nothing();
@@ -376,6 +395,262 @@ namespace BasHarness
                 default:
                     return null;
             }
+        }
+
+        private const float SpawnTimeout = 30f;
+        private const float DefaultNpcWithin = 2f;
+        private const float SpeedTimeout = 5f;
+
+        /// <summary>
+        /// Spawns an NPC the way the book's spawner does (UICustomSpawner.Spawn: CreatureData clone,
+        /// optional brain id, SpawnCoroutine) at a point around the player, and waits until it is loaded.
+        /// </summary>
+        private IEnumerator SpawnNpc(Step step, Outcome outcome)
+        {
+            var player = Player.local?.creature;
+            if (player == null)
+            {
+                outcome.Fail("no player creature (wait-level first)");
+                yield break;
+            }
+            if (!(Catalog.GetData<CreatureData>(step.Args[0])?.Clone() is CreatureData data))
+            {
+                outcome.Fail("no CreatureData '" + step.Args[0] + "' in the catalog");
+                yield break;
+            }
+            if (step.Named.TryGetValue("brain", out var brainId))
+            {
+                data.brainId = brainId;
+            }
+            var distance = Number(step, "distance", 2f);
+            var angle = Number(step, "angle", 0f);
+            var forward = player.transform.forward;
+            var (x, z) = CombatMath.OffsetXZ(forward.x, forward.z, angle, distance);
+            var position = player.transform.position + new Vector3(x, 0f, z);
+            var facePlayer = Quaternion.LookRotation(new Vector3(-x, 0f, -z)).eulerAngles.y;
+
+            Creature spawned = null;
+            GameManager.local.StartCoroutine(data.SpawnCoroutine(position, facePlayer, null, c => spawned = c));
+            var start = Time.realtimeSinceStartup;
+            while (spawned == null || !spawned.loaded)
+            {
+                if (Time.realtimeSinceStartup - start > SpawnTimeout)
+                {
+                    outcome.Fail("NPC '" + step.Args[0] + "' not loaded after " + SpawnTimeout.ToString("0", CultureInfo.InvariantCulture) + "s");
+                    yield break;
+                }
+                yield return new WaitForSecondsRealtime(Poll);
+            }
+            _npc = spawned;
+            var loadedBrain = spawned.brain?.instance?.id;
+            if (brainId != null && !string.Equals(loadedBrain, brainId, StringComparison.OrdinalIgnoreCase))
+            {
+                outcome.Fail("brain '" + brainId + "' did not load (has '" + (loadedBrain ?? "none") + "')");
+                yield break;
+            }
+            var hitReaction = spawned.brain?.instance?.GetModule<BrainModuleHitReaction>(autoAddModuleIfMissing: false) != null;
+            outcome.Detail = "'" + spawned.data.id + "' brain '" + (spawned.brain?.instance?.id ?? "none") + "'"
+                + (hitReaction ? " with" : " WITHOUT") + " BrainModuleHitReaction, "
+                + Vector3.Distance(player.transform.position, spawned.transform.position).ToString("0.0", CultureInfo.InvariantCulture) + " m away";
+        }
+
+        /// <summary>
+        /// Moves the player forward through the game's own locomotion: the call the gamepad input makes
+        /// (InputGamepad: locomotion.MoveWeighted(dir, body, 1, 1, sprinting ? 1 : 0)), repeated each frame
+        /// until stop-run. The ratio is the run share (0 walk, 1 full sprint).
+        /// </summary>
+        private IEnumerator Run(Step step, Outcome outcome)
+        {
+            if (Player.local?.locomotion == null || Player.local.creature == null)
+            {
+                outcome.Fail("no player locomotion (wait-level first)");
+                yield break;
+            }
+            ScenarioParser.TryParseNumber(step.Args[0], out var ratio);
+            var alreadyRunning = _runRatio >= 0f;
+            _runRatio = ratio;
+            if (!alreadyRunning)
+            {
+                GameManager.local.StartCoroutine(Drive());
+            }
+            outcome.Detail = "moving forward, run ratio " + ratio.ToString("0.##", CultureInfo.InvariantCulture);
+        }
+
+        private IEnumerator Drive()
+        {
+            while (_runRatio >= 0f && Player.local?.locomotion != null && Player.local.creature != null)
+            {
+                var body = Player.local.creature.transform;
+                Player.local.locomotion.MoveWeighted(body.forward, body, 1f, 1f, _runRatio);
+                yield return null;
+            }
+        }
+
+        private void StopRun(Outcome outcome)
+        {
+            _runRatio = -1f;
+            Player.local?.locomotion?.MoveStop();
+            outcome.Detail = "stopped";
+        }
+
+        /// <summary>
+        /// Turns the player on the spot (clockwise seen from above) with the game's own Player.Teleport,
+        /// so runs can go back and forth inside the level instead of into a wall.
+        /// </summary>
+        private static void TurnPlayer(Step step, Outcome outcome)
+        {
+            var player = Player.local;
+            if (player == null || player.creature == null)
+            {
+                outcome.Fail("no player (wait-level first)");
+                return;
+            }
+            ScenarioParser.TryParseNumber(step.Args[0], out var degrees);
+            var before = player.creature.transform.eulerAngles.y;
+            player.Teleport(player.transform.position, player.transform.rotation * Quaternion.Euler(0f, degrees, 0f), keepVelocity: false, useHeadPosition: false);
+            outcome.Detail = "body yaw " + before.ToString("0", CultureInfo.InvariantCulture) + " -> rig turned " + degrees.ToString("0", CultureInfo.InvariantCulture) + " deg";
+        }
+
+        /// <summary>Locomotion.horizontalSpeed (m/s, measured by the game each frame) reaches the range within 5 s.</summary>
+        private static IEnumerator ExpectPlayerSpeed(Step step, Outcome outcome)
+        {
+            ScenarioParser.TryParseNumber(step.Args[0], out var min);
+            float? max = null;
+            if (step.Args.Count > 1)
+            {
+                ScenarioParser.TryParseNumber(step.Args[1], out var m);
+                max = m;
+            }
+            var start = Time.realtimeSinceStartup;
+            var peak = 0f;
+            while (true)
+            {
+                var speed = Player.local?.locomotion?.horizontalSpeed ?? 0f;
+                peak = Mathf.Max(peak, speed);
+                if (CombatMath.InRange(speed, min, max))
+                {
+                    outcome.Detail = "horizontal speed " + speed.ToString("0.00", CultureInfo.InvariantCulture) + " m/s";
+                    yield break;
+                }
+                if (Time.realtimeSinceStartup - start > SpeedTimeout)
+                {
+                    outcome.Fail("horizontal speed " + speed.ToString("0.00", CultureInfo.InvariantCulture) + " m/s (peak "
+                        + peak.ToString("0.00", CultureInfo.InvariantCulture) + ") not in range within " + SpeedTimeout.ToString("0", CultureInfo.InvariantCulture) + "s");
+                    yield break;
+                }
+                yield return null;
+            }
+        }
+
+        /// <summary>
+        /// A hit by the player's right hand on a part of the spawned NPC, through Creature.Damage — the
+        /// method a real collision ends in (it raises EventManager.onCreatureHit OnStart and OnEnd).
+        /// No physics contact happens: the hit is attributed to the player through the damager and
+        /// source collider group of the player's hand, as a punch is.
+        /// push = DamageStruct.pushLevel; the default -1 makes the game's own hit reaction skip its push
+        /// (BrainModuleHitReaction.TryPush returns on pushLevel &lt; 0), so a stagger seen afterwards came
+        /// from the mod under test.
+        /// </summary>
+        private void HitNpc(Step step, Outcome outcome)
+        {
+            if (_npc == null || _npc.isKilled)
+            {
+                outcome.Fail(_npc == null ? "no NPC (spawn-npc first)" : "the NPC is dead");
+                return;
+            }
+            if (!Enum.TryParse(step.Args[0], true, out RagdollPart.Type type))
+            {
+                outcome.Fail("'" + step.Args[0] + "' is not a body part (" + string.Join(", ", Enum.GetNames(typeof(RagdollPart.Type))) + ")");
+                return;
+            }
+            var part = _npc.ragdoll.GetPart(type);
+            if (part == null)
+            {
+                outcome.Fail("the NPC has no " + type);
+                return;
+            }
+            var hand = Player.local?.creature?.handRight;
+            if (hand == null)
+            {
+                outcome.Fail("no player hand");
+                return;
+            }
+            var velocity = Number(step, "velocity", 5f);
+            var damage = Number(step, "damage", 1f);
+            var push = step.Named.TryGetValue("push", out var pushText) ? int.Parse(pushText, CultureInfo.InvariantCulture) : -1;
+            var direction = (part.transform.position - hand.transform.position).normalized;
+            var hit = new CollisionInstance(new DamageStruct(DamageType.Blunt, damage)
+            {
+                damager = hand.bodyDamager,
+                hitRagdollPart = part,
+                pushLevel = push,
+            })
+            {
+                sourceColliderGroup = hand.colliderGroup,
+                targetColliderGroup = part.colliderGroup,
+                impactVelocity = direction * velocity,
+                contactPoint = part.transform.position,
+                contactNormal = -direction,
+            };
+            var before = _npc.currentHealth;
+            _npc.Damage(hit);
+            outcome.Detail = type + " hit at " + velocity.ToString("0.#", CultureInfo.InvariantCulture) + " m/s, health "
+                + before.ToString("0.#", CultureInfo.InvariantCulture) + " -> " + _npc.currentHealth.ToString("0.#", CultureInfo.InvariantCulture)
+                + ", player speed " + (Player.local?.locomotion?.horizontalSpeed ?? 0f).ToString("0.00", CultureInfo.InvariantCulture) + " m/s";
+        }
+
+        private IEnumerator ExpectNpc(Step step, Outcome outcome)
+        {
+            if (_npc == null)
+            {
+                outcome.Fail("no NPC (spawn-npc first)");
+                yield break;
+            }
+            var within = DefaultNpcWithin;
+            if (step.Named.TryGetValue("within", out var withinText))
+            {
+                ScenarioParser.TryParseSeconds(withinText, out within);
+            }
+            var start = Time.realtimeSinceStartup;
+            while (true)
+            {
+                var actual = NpcValue(_npc, step.Args[0]);
+                if (NpcProperty.Matches(step.Args[1], actual))
+                {
+                    outcome.Detail = step.Args[0] + " = " + actual + " (" + NpcSummary(_npc) + ")";
+                    yield break;
+                }
+                if (Time.realtimeSinceStartup - start > within)
+                {
+                    outcome.Fail(step.Args[0] + " is '" + actual + "' (" + NpcSummary(_npc) + ")");
+                    yield break;
+                }
+                yield return null;
+            }
+        }
+
+        private static string NpcValue(Creature npc, string property)
+        {
+            switch (property.ToLowerInvariant())
+            {
+                case "stagger":
+                    return (npc.brain != null ? npc.brain.currentStagger : Brain.Stagger.None).ToString();
+                case "state":
+                    return npc.state.ToString();
+                default:
+                    var staggered = (npc.brain != null && npc.brain.currentStagger != Brain.Stagger.None) || npc.state == Creature.State.Destabilized;
+                    return staggered ? "True" : "False";
+            }
+        }
+
+        private static string NpcSummary(Creature npc)
+        {
+            return "stagger " + (npc.brain != null ? npc.brain.currentStagger : Brain.Stagger.None) + ", state " + npc.state;
+        }
+
+        private static float Number(Step step, string key, float fallback)
+        {
+            return step.Named.TryGetValue(key, out var text) && ScenarioParser.TryParseNumber(text, out var value) ? value : fallback;
         }
 
         private IEnumerator Screenshot(string name, Outcome outcome)

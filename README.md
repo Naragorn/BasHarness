@@ -59,6 +59,13 @@ the first FAIL; the game quits by itself at the end.
 | `save-options` | save options the way closing the player menu does |
 | `screenshot <name>` | PNG of the game view into the run folder |
 | `quit` | end here |
+| `spawn-npc <creatureId> [distance=2] [angle=0] [brain=<id>]` | spawn an NPC the way the book's spawner does, `distance` m from the player, `angle` degrees clockwise from where the player faces; waits until loaded; fails if a requested brain did not load. `brain=HumanDummy` stands still and still staggers (has `BrainModuleHitReaction`) |
+| `run <0..1>` | keep the player moving forward through the game's own locomotion (`Locomotion.MoveWeighted`, the gamepad's call); the number is the run share, 0 = walk (2.8 m/s in the Arena), 1 = full sprint (6.0 m/s) |
+| `stop-run` | stop moving |
+| `turn-player <degrees>` | turn the player on the spot (`Player.Teleport`), e.g. 180 to run back instead of into a wall |
+| `expect-player-speed <min> [max]` | `Locomotion.horizontalSpeed` (m/s) is in range within 5 s |
+| `hit-npc <RagdollPart.Type> [velocity=5] [damage=1] [push=-1]` | a hit by the player's right hand on that part of the spawned NPC through `Creature.Damage` (raises `onCreatureHit` OnStart/OnEnd); no physics contact. `push` = `DamageStruct.pushLevel`: the default -1 makes the game's own hit reaction skip its push, so a stagger afterwards came from the mod under test |
+| `expect-npc <stagger\|state\|staggered> <value> [within=2]` | the NPC's `Brain.currentStagger` (None/LightAndMedium/Full), `Creature.state` (Alive/Destabilized/Dead), or staggered (True/False: stagger not None or destabilized) reaches the value within the time |
 
 `<mod>` is the mod's folder name or manifest name.
 
@@ -66,8 +73,9 @@ the first FAIL; the game quits by itself at the end.
 
 - **Looking at the menu itself**: the checks read the same data the mods page renders from, but nobody
   opens the book; whether it *looks* right is still a headset check.
-- **Controller input / physical combat**: no hands are moved. Combat scenarios will need steps that drive
-  the game directly (spawn an NPC, apply a hit) — added when the first mechanic needs them.
+- **Controller input / physical combat**: no hands are moved. The combat steps drive the game directly
+  (locomotion call, `Creature.Damage`); a real arm-swing sprint, a real weapon contact and how it feels stay
+  headset checks.
 
 ## Development
 

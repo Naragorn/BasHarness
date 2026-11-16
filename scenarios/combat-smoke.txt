@@ -1,0 +1,23 @@
+# Combat steps: spawn an NPC, move the player through the game's own locomotion, hit the NPC.
+# Needs no mod under test. Run: python3 runner/bas_harness.py scenarios/combat-smoke.txt
+wait-level
+spawn-npc HumanMale distance=3 angle=180
+expect-npc state Alive
+# walking, then sprinting: the step details show the speeds the game measures
+run 0
+wait 2
+expect-player-speed 0.1
+run 1
+wait 2
+expect-player-speed 0.1
+stop-run
+expect-player-speed 0 0.3
+# a hit with push=-1 must not stagger (the game's own reaction skips it) ...
+hit-npc Torso velocity=5 damage=1
+expect-npc staggered false within=0
+# ... a hit with a push level does (the game's own reaction): proves the hit reaches the brain
+wait 3
+hit-npc Torso velocity=5 damage=1 push=1
+expect-npc staggered true
+screenshot combat-smoke
+quit

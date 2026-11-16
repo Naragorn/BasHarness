@@ -65,6 +65,9 @@ namespace BasHarness.Core
             public bool Rest { get; }
             public string[] Keys { get; }
             public bool NumericFirstArg { get; set; }
+
+            /// <summary>Extra checks on the parsed arguments; returns an error or null.</summary>
+            public Func<IReadOnlyList<string>, IReadOnlyDictionary<string, string>, string> Validate { get; set; }
         }
 
         private static readonly Dictionary<string, Spec> Specs = new Dictionary<string, Spec>
@@ -81,6 +84,27 @@ namespace BasHarness.Core
             ["save-options"] = new Spec(0, 0, false),
             ["screenshot"] = new Spec(1, 1, false),
             ["quit"] = new Spec(0, 0, false),
+            ["spawn-npc"] = new Spec(1, 1, false, "distance", "angle", "brain")
+            {
+                Validate = (a, n) => NumberKey(n, "distance") ?? NumberKey(n, "angle"),
+            },
+            ["run"] = new Spec(1, 1, false) { Validate = (a, n) => RunRatio(a[0]) },
+            ["stop-run"] = new Spec(0, 0, false),
+            ["turn-player"] = new Spec(1, 1, false)
+            {
+                Validate = (a, n) => TryParseNumber(a[0], out _) ? null : "'" + a[0] + "' is not a number of degrees",
+            },
+            ["expect-player-speed"] = new Spec(1, 2, false) { Validate = (a, n) => SpeedRange(a) },
+            ["hit-npc"] = new Spec(1, 1, false, "velocity", "damage", "push")
+            {
+                Validate = (a, n) => NumberKey(n, "velocity") ?? NumberKey(n, "damage") ?? WholeKey(n, "push"),
+            },
+            ["expect-npc"] = new Spec(2, 2, false, "within")
+            {
+                Validate = (a, n) => !NpcProperty.IsKnown(a[0])
+                    ? "unknown NPC property '" + a[0] + "' (known: " + string.Join(", ", NpcProperty.Names) + ")"
+                    : SecondsKey(n, "within"),
+            },
         };
 
         public static IEnumerable<string> Verbs => Specs.Keys;
@@ -176,7 +200,70 @@ namespace BasHarness.Core
                 return verb + ": '" + args[0] + "' is not a number of seconds >= 0";
             }
 
+            var invalid = spec.Validate?.Invoke(args, named);
+            if (invalid != null)
+            {
+                return verb + ": " + invalid;
+            }
+
             step = new Step(lineNumber, verb, args, named, null, raw);
+            return null;
+        }
+
+        public static bool TryParseNumber(string text, out float value)
+        {
+            return float.TryParse(text, NumberStyles.Float, CultureInfo.InvariantCulture, out value)
+                && !float.IsNaN(value) && !float.IsInfinity(value);
+        }
+
+        private static string NumberKey(IReadOnlyDictionary<string, string> named, string key)
+        {
+            return named.TryGetValue(key, out var text) && !TryParseNumber(text, out _)
+                ? key + ": '" + text + "' is not a number"
+                : null;
+        }
+
+        private static string WholeKey(IReadOnlyDictionary<string, string> named, string key)
+        {
+            return named.TryGetValue(key, out var text) && !int.TryParse(text, NumberStyles.Integer, CultureInfo.InvariantCulture, out _)
+                ? key + ": '" + text + "' is not a whole number"
+                : null;
+        }
+
+        private static string SecondsKey(IReadOnlyDictionary<string, string> named, string key)
+        {
+            return named.TryGetValue(key, out var text) && !TryParseSeconds(text, out _)
+                ? key + ": '" + text + "' is not a number of seconds >= 0"
+                : null;
+        }
+
+        private static string RunRatio(string text)
+        {
+            if (!TryParseNumber(text, out var ratio))
+            {
+                return "'" + text + "' is not a number";
+            }
+            return ratio < 0f || ratio > 1f ? "run ratio " + text + " must be between 0 and 1" : null;
+        }
+
+        private static string SpeedRange(IReadOnlyList<string> args)
+        {
+            foreach (var text in args)
+            {
+                if (!TryParseNumber(text, out _))
+                {
+                    return "'" + text + "' is not a number";
+                }
+            }
+            if (args.Count == 2)
+            {
+                TryParseNumber(args[0], out var min);
+                TryParseNumber(args[1], out var max);
+                if (max < min)
+                {
+                    return "max " + args[1] + " is below min " + args[0];
+                }
+            }
             return null;
         }
 
