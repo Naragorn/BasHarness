@@ -79,6 +79,7 @@ namespace BasHarness.Core
             ["wait"] = new Spec(1, 1, false) { NumericFirstArg = true },
             ["mark"] = new Spec(0, 0, false),
             ["expect-log"] = new Spec(0, 0, true),
+            ["await-log"] = new Spec(0, 0, true),
             ["expect-no-log"] = new Spec(0, 0, true),
             ["option-exists"] = new Spec(2, 2, false, "category", "display", "type", "save", "interaction", "tooltip"),
             ["set-option"] = new Spec(3, 3, false),
@@ -112,14 +113,16 @@ namespace BasHarness.Core
             {
                 Validate = (a, n) => TryParseNumber(a[0], out _) ? null : "'" + a[0] + "' is not a number of degrees",
             },
+            ["player-grab"] = new Spec(1, 1, false, "hand") { Validate = (a, n) => OneOf(n, "hand", new[] { "left", "right" }) },
+            ["player-parry"] = new Spec(0, 0, false, "offset") { Validate = (a, n) => NumberKey(n, "offset") },
             ["player-invincible"] = new Spec(1, 1, false)
             {
                 Validate = (a, n) => a[0] == "true" || a[0] == "false" ? null : "'" + a[0] + "' is not one of true, false",
             },
             ["expect-player-speed"] = new Spec(1, 2, false) { Validate = (a, n) => SpeedRange(a) },
-            ["hit-npc"] = new Spec(1, 1, false, "velocity", "damage", "push", "type", "by", "item", "dead")
+            ["hit-npc"] = new Spec(1, 1, false, "velocity", "damage", "push", "type", "by", "item", "dead", "swing")
             {
-                Validate = (a, n) => NumberKey(n, "velocity") ?? NumberKey(n, "damage") ?? WholeKey(n, "push") ?? OneOf(n, "by", HitBy.Names)
+                Validate = (a, n) => NumberKey(n, "velocity") ?? NumberKey(n, "damage") ?? NumberKey(n, "swing") ?? WholeKey(n, "push") ?? OneOf(n, "by", HitBy.Names)
                     ?? OneOf(n, "dead", new[] { "true", "false" }),
             },
             ["expect-npc"] = new Spec(2, 2, false, "within")
@@ -131,6 +134,20 @@ namespace BasHarness.Core
         };
 
         public static IEnumerable<string> Verbs => Specs.Keys;
+
+        /// <summary>await-log's text: "&lt;seconds&gt; &lt;text&gt;" (seconds a positive number).</summary>
+        public static bool TrySplitAwait(string rest, out float seconds, out string text)
+        {
+            seconds = 0f;
+            text = null;
+            var space = (rest ?? string.Empty).IndexOf(' ');
+            if (space <= 0 || !TryParseNumber(rest.Substring(0, space), out seconds) || seconds <= 0f)
+            {
+                return false;
+            }
+            text = rest.Substring(space + 1).Trim();
+            return text.Length > 0;
+        }
 
         public static Scenario Parse(string text)
         {

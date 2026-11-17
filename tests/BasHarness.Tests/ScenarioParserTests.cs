@@ -104,3 +104,26 @@ public class ScenarioParserTests
         Assert.Equal("set-option DMCS \"Debug Logging\" true", step.Describe());
     }
 }
+
+public class AwaitLogParserTests
+{
+    [Fact]
+    public void AwaitLog_TakesSecondsThenText()
+    {
+        var s = ScenarioParser.Parse("await-log 30 : flash, sound DMCS 1");
+
+        Assert.Empty(s.Errors);
+        Assert.True(ScenarioParser.TrySplitAwait(s.Steps[0].Rest, out var seconds, out var text));
+        Assert.Equal(30f, seconds);
+        Assert.Equal(": flash, sound DMCS 1", text);
+    }
+
+    [Theory]
+    [InlineData("soon : flash")]
+    [InlineData("30")]
+    [InlineData("-1 x")]
+    public void AwaitLog_NeedsPositiveSecondsAndText(string rest)
+    {
+        Assert.False(ScenarioParser.TrySplitAwait(rest, out _, out _));
+    }
+}

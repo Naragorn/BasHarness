@@ -138,6 +138,13 @@ namespace BasHarness
                     return Nothing();
                 case "expect-log":
                     return ExpectLog(step.Rest, outcome);
+                case "await-log":
+                    if (!ScenarioParser.TrySplitAwait(step.Rest, out var awaitSeconds, out var awaitText))
+                    {
+                        outcome.Fail("await-log needs <seconds> <text>");
+                        return Nothing();
+                    }
+                    return ExpectLog(awaitText, outcome, awaitSeconds);
                 case "expect-no-log":
                     if (_cursor.ContainsSinceMark(ReadLog(), step.Rest))
                     {
@@ -184,6 +191,10 @@ namespace BasHarness
                 case "npc-attack":
                     NpcAttack(step, outcome);
                     return Nothing();
+                case "player-grab":
+                    return PlayerGrab(step, outcome);
+                case "player-parry":
+                    return PlayerParry(step, outcome);
                 case "player-grab-dropped":
                     return PlayerGrabDropped(step, outcome);
                 case "expect-npc":
@@ -226,14 +237,14 @@ namespace BasHarness
             outcome.Detail = "player in level '" + (Level.current?.data?.id ?? "?") + "'";
         }
 
-        private IEnumerator ExpectLog(string text, Outcome outcome)
+        private IEnumerator ExpectLog(string text, Outcome outcome, float timeout = ExpectLogTimeout)
         {
             var start = Time.realtimeSinceStartup;
             while (!_cursor.ContainsSinceMark(ReadLog(), text))
             {
-                if (Time.realtimeSinceStartup - start > ExpectLogTimeout)
+                if (Time.realtimeSinceStartup - start > timeout)
                 {
-                    outcome.Fail("not found since last mark within " + ExpectLogTimeout.ToString("0", CultureInfo.InvariantCulture) + "s");
+                    outcome.Fail("not found since last mark within " + timeout.ToString("0", CultureInfo.InvariantCulture) + "s");
                     yield break;
                 }
                 yield return new WaitForSecondsRealtime(Poll);
@@ -578,6 +589,10 @@ namespace BasHarness
         /// </summary>
         private const string DefaultHitItem = "DaggerCommon";
 
+        /// <summary>m/s and seconds of the controller swing before a punch (hit-npc by=hand).</summary>
+        private const float DefaultSwing = 3f;
+        private const float SwingSeconds = 0.12f;
+
         private IEnumerator HitNpc(Step step, Outcome outcome)
         {
             var allowDead = step.Named.TryGetValue("dead", out var deadText) && deadText.Equals("true", StringComparison.OrdinalIgnoreCase);
@@ -683,11 +698,32 @@ namespace BasHarness
                 contactNormal = -direction,
                 casterHand = by == "spell" ? hand.caster : null,
             };
+            // A punch: the player's real hand (its controller pose) swings first, so a mod that asks how fast the hand
+            // moved sees a punch; swing=0 is a hand that was only run into.
+            var swing = by == "hand" ? Number(step, "swing", DefaultSwing) : 0f;
+            var playerHand = Player.local?.handRight;
+            var restPosition = playerHand != null ? playerHand.transform.localPosition : Vector3.zero;
+            if (swing > 0f && playerHand != null)
+            {
+                playerHand.SetTracking(false);
+                var swingStart = Time.realtimeSinceStartup;
+                while (Time.realtimeSinceStartup - swingStart < SwingSeconds)
+                {
+                    playerHand.transform.localPosition = restPosition + (Vector3.forward * (swing * (Time.realtimeSinceStartup - swingStart)));
+                    yield return null;
+                }
+            }
             var before = _npc.currentHealth;
             _npc.Damage(hit);
+            if (swing > 0f && playerHand != null)
+            {
+                playerHand.transform.localPosition = restPosition;
+                playerHand.SetTracking(true);
+            }
             outcome.Detail = type + " " + damageType + " hit by " + by + (item != null ? " '" + item.data.id + "'" : string.Empty)
                 + " at " + velocity.ToString("0.#", CultureInfo.InvariantCulture) + " m/s, health "
                 + before.ToString("0.#", CultureInfo.InvariantCulture) + " -> " + _npc.currentHealth.ToString("0.#", CultureInfo.InvariantCulture)
+                + (by == "hand" ? ", hand swing " + swing.ToString("0.#", CultureInfo.InvariantCulture) + " m/s" : string.Empty)
                 + ", player speed " + (Player.local?.locomotion?.horizontalSpeed ?? 0f).ToString("0.00", CultureInfo.InvariantCulture) + " m/s";
             if (item != null)
             {
@@ -856,6 +892,80 @@ namespace BasHarness
                 yield break;
             }
             outcome.Detail = "player's " + side + " hand holds '" + _npcItem.data.id + "'";
+        }
+
+        /// <summary>The player's hand grabs a newly spawned item (RagdollHand.Grab, teleported to the hand).</summary>
+        private IEnumerator PlayerGrab(Step step, Outcome outcome)
+        {
+            var player = Player.local != null ? Player.local.creature : null;
+            var data = Catalog.GetData<ItemData>(step.Args[0]);
+            if (player == null || data == null)
+            {
+                outcome.Fail(player == null ? "no player creature" : "no ItemData '" + step.Args[0] + "' in the catalog");
+                yield break;
+            }
+            var side = step.Named.TryGetValue("hand", out var handText) && handText.Equals("left", StringComparison.OrdinalIgnoreCase) ? Side.Left : Side.Right;
+            var hand = player.GetHand(side);
+            Item item = null;
+            data.SpawnAsync(i => item = i, hand.transform.position, hand.transform.rotation, null, false, null);
+            var start = Time.realtimeSinceStartup;
+            while (item == null)
+            {
+                if (Time.realtimeSinceStartup - start > SpawnTimeout)
+                {
+                    outcome.Fail("item '" + step.Args[0] + "' not spawned");
+                    yield break;
+                }
+                yield return null;
+            }
+            if (Holds(hand))
+            {
+                hand.TryRelease();
+            }
+            hand.Grab(item.GetMainHandle(side), true);
+            yield return null;
+            if (!item.handlers.Contains(hand))
+            {
+                outcome.Fail("the player's " + side + " hand did not grab '" + step.Args[0] + "'");
+                yield break;
+            }
+            outcome.Detail = "player's " + side + " hand holds '" + step.Args[0] + "'";
+        }
+
+        /// <summary>
+        /// Raises the game's own block event (EventManager.InvokeCreatureAttackParried, as BrainModuleMelee does when an NPC's
+        /// swing hits a held weapon) for the spawned NPC's attacking weapon (the hand of its running attack, else the right) against the player's right-hand item, with the
+        /// contact at the middle between the NPC's grip and the damager furthest from it, moved `offset` m along the blade. No physics contact.
+        /// </summary>
+        private IEnumerator PlayerParry(Step step, Outcome outcome)
+        {
+            var player = Player.local != null ? Player.local.creature : null;
+            // The weapon of the NPC's running attack (BrainModuleMelee.attack.attackSide), else its right hand's.
+            var attack = _npc?.brain?.instance?.GetModule<BrainModuleMelee>(false)?.attack;
+            var npcHand = _npc == null ? null : attack != null && attack.attackSide == Interactable.HandSide.Left ? _npc.handLeft : _npc.handRight;
+            var npcItem = npcHand != null ? npcHand.grabbedHandle?.item : null;
+            var playerItem = player != null ? player.handRight.grabbedHandle?.item : null;
+            if (npcItem == null || playerItem == null)
+            {
+                outcome.Fail(npcItem == null ? "the NPC holds nothing in its attacking hand" : "the player holds nothing in the right hand");
+                yield break;
+            }
+            var grip = npcHand.grabbedHandle.transform.position;
+            // The blade tip: the damager furthest from the grip (no physics module reference needed for its transform).
+            var tip = npcItem.collisionHandlers.SelectMany(h => h.damagers).Where(d => d != null)
+                .Select(d => d.transform.position).OrderByDescending(p => (p - grip).sqrMagnitude).DefaultIfEmpty(npcItem.transform.position).First();
+            var axis = (tip - grip).normalized;
+            var point = ((grip + tip) / 2f) + (axis * Number(step, "offset", 0f));
+            var hit = new CollisionInstance(new DamageStruct(DamageType.Blunt, 0f))
+            {
+                sourceColliderGroup = npcItem.colliderGroups.FirstOrDefault(),
+                targetColliderGroup = playerItem.colliderGroups.FirstOrDefault(),
+                impactVelocity = (player.transform.position - _npc.transform.position).normalized * 3f,
+                contactPoint = point,
+            };
+            EventManager.InvokeCreatureAttackParried(_npc, npcItem, player, playerItem, hit);
+            outcome.Detail = "'" + npcItem.data.id + "' blocked by '" + playerItem.data.id + "' at " + point.ToString("F2") + " (" + Number(step, "offset", 0f).ToString("0.##", CultureInfo.InvariantCulture) + " m along the blade from its middle)";
+            yield break;
         }
 
         private static float Number(Step step, string key, float fallback)
