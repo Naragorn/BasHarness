@@ -10,7 +10,7 @@ public class CombatStepParserTests
     public void CombatVerbs_ParseWithTheirArguments()
     {
         var s = ScenarioParser.Parse(string.Join("\n",
-            "spawn-npc HumanMale distance=3 angle=180 brain=HumanMedium facing=180",
+            "spawn-npc HumanMale distance=3 angle=180 brain=HumanMedium facing=180 container=CivilianMeleeSword",
             "run 1",
             "expect-player-speed 2.5",
             "expect-player-speed 0 0.5",
@@ -20,17 +20,19 @@ public class CombatStepParserTests
             "stop-run",
             "turn-player 180",
             "turn-player -90",
+            "player-invincible true",
             "npc-grab DaggerCommon",
             "npc-grab SwordShortCommon hand=left",
             "expect-npc holding true",
             "expect-npc brain HumanDummy"));
 
         Assert.Empty(s.Errors);
-        Assert.Equal(new[] { "spawn-npc", "run", "expect-player-speed", "expect-player-speed", "hit-npc", "expect-npc", "expect-npc", "stop-run", "turn-player", "turn-player", "npc-grab", "npc-grab", "expect-npc", "expect-npc" },
+        Assert.Equal(new[] { "spawn-npc", "run", "expect-player-speed", "expect-player-speed", "hit-npc", "expect-npc", "expect-npc", "stop-run", "turn-player", "turn-player", "player-invincible", "npc-grab", "npc-grab", "expect-npc", "expect-npc" },
             s.Steps.Select(x => x.Verb));
         Assert.Equal("HumanMedium", s.Steps[0].Named["brain"]);
         Assert.Equal("1.5", s.Steps[5].Named["within"]);
         Assert.Equal("180", s.Steps[0].Named["facing"]);
+        Assert.Equal("CivilianMeleeSword", s.Steps[0].Named["container"]);
         Assert.Equal("Pierce", s.Steps[4].Named["type"]);
         Assert.Equal("thrown", s.Steps[4].Named["by"]);
     }
@@ -74,6 +76,8 @@ public class CombatStepParserTests
     [InlineData("expect-player-speed x", "is not a number")]
     [InlineData("expect-player-speed 3 2", "max 2 is below min 3")]
     [InlineData("turn-player", "expects 1")]
+    [InlineData("player-invincible", "expects 1")]
+    [InlineData("player-invincible yes", "'yes' is not one of true, false")]
     [InlineData("turn-player left", "'left' is not a number")]
     [InlineData("npc-grab", "expects 1")]
     [InlineData("npc-grab DaggerCommon hand=both", "hand: 'both' is not one of left, right")]

@@ -168,6 +168,10 @@ namespace BasHarness
                 case "stop-run":
                     StopRun(outcome);
                     return Nothing();
+                case "player-invincible":
+                    Player.invincibility = step.Args[0] == "true";
+                    outcome.Detail = "Player.invincibility = " + Player.invincibility;
+                    return Nothing();
                 case "turn-player":
                     TurnPlayer(step, outcome);
                     return Nothing();
@@ -431,6 +435,15 @@ namespace BasHarness
             {
                 data.brainId = brainId;
             }
+            if (step.Named.TryGetValue("container", out var containerId))
+            {
+                if (Catalog.GetData<ContainerData>(containerId, false) == null)
+                {
+                    outcome.Fail("no ContainerData '" + containerId + "' in the catalog");
+                    yield break;
+                }
+                data.containerID = containerId;
+            }
             var distance = Number(step, "distance", 2f);
             var angle = Number(step, "angle", 0f);
             var forward = player.transform.forward;
@@ -460,6 +473,7 @@ namespace BasHarness
             }
             var hitReaction = spawned.brain?.instance?.GetModule<BrainModuleHitReaction>(autoAddModuleIfMissing: false) != null;
             outcome.Detail = "'" + spawned.data.id + "' brain '" + (spawned.brain?.instance?.id ?? "none") + "'"
+                + (containerId != null ? " container '" + containerId + "'" : "")
                 + (hitReaction ? " with" : " WITHOUT") + " BrainModuleHitReaction, "
                 + Vector3.Distance(player.transform.position, spawned.transform.position).ToString("0.0", CultureInfo.InvariantCulture) + " m away, "
                 + "turned " + Vector3.SignedAngle(new Vector3(-x, 0f, -z), spawned.transform.forward, Vector3.up).ToString("0", CultureInfo.InvariantCulture) + " deg from facing the player";
