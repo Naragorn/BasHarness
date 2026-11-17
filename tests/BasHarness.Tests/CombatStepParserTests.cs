@@ -45,7 +45,21 @@ public class CombatStepParserTests
         Assert.Equal("true", s.Steps[1].Named["dead"]);
     }
 
+    [Fact]
+    public void NpcAttack_AndPlayerGrabDropped_Parse()
+    {
+        var s = ScenarioParser.Parse("wait-level\nnpc-attack Attack\nnpc-attack end\nplayer-grab-dropped\nplayer-grab-dropped hand=left");
+
+        Assert.Empty(s.Errors);
+        Assert.Equal(new[] { "wait-level", "npc-attack", "npc-attack", "player-grab-dropped", "player-grab-dropped" }, s.Steps.Select(x => x.Verb));
+        Assert.Equal("left", s.Steps[4].Named["hand"]);
+    }
+
     [Theory]
+    [InlineData("npc-attack", "expects 1")]
+    [InlineData("npc-attack Swing", "'Swing' is not one of WindUp, Attack, FollowThrough, End, Cancel")]
+    [InlineData("player-grab-dropped now", "expects 0")]
+    [InlineData("player-grab-dropped hand=both", "hand: 'both' is not one of left, right")]
     [InlineData("spawn-npc", "expects 1")]
     [InlineData("spawn-npc HumanMale distance=far", "distance: 'far' is not a number")]
     [InlineData("spawn-npc HumanMale angle=x", "angle: 'x' is not a number")]

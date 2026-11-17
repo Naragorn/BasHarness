@@ -70,6 +70,9 @@ namespace BasHarness.Core
             public Func<IReadOnlyList<string>, IReadOnlyDictionary<string, string>, string> Validate { get; set; }
         }
 
+        /// <summary>BrainModuleAttack.AttackStage names, in the game's order.</summary>
+        public static readonly string[] AttackStages = { "WindUp", "Attack", "FollowThrough", "End", "Cancel" };
+
         private static readonly Dictionary<string, Spec> Specs = new Dictionary<string, Spec>
         {
             ["wait-level"] = new Spec(0, 1, false) { NumericFirstArg = true },
@@ -98,6 +101,13 @@ namespace BasHarness.Core
             ["run"] = new Spec(1, 1, false) { Validate = (a, n) => RunRatio(a[0]) },
             ["stop-run"] = new Spec(0, 0, false),
             ["npc-grab"] = new Spec(1, 1, false, "hand") { Validate = (a, n) => OneOf(n, "hand", new[] { "left", "right" }) },
+            ["npc-attack"] = new Spec(1, 1, false)
+            {
+                Validate = (a, n) => AttackStages.Contains(a[0], StringComparer.OrdinalIgnoreCase)
+                    ? null
+                    : "'" + a[0] + "' is not one of " + string.Join(", ", AttackStages),
+            },
+            ["player-grab-dropped"] = new Spec(0, 0, false, "hand") { Validate = (a, n) => OneOf(n, "hand", new[] { "left", "right" }) },
             ["turn-player"] = new Spec(1, 1, false)
             {
                 Validate = (a, n) => TryParseNumber(a[0], out _) ? null : "'" + a[0] + "' is not a number of degrees",

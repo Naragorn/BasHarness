@@ -24,6 +24,9 @@ namespace BasHarness
         private readonly LogCursor _cursor = new LogCursor();
         private bool _calibrationSkipped;
         private Creature _npc;
+
+        /// <summary>The item the last npc-grab gave the NPC (player-grab-dropped takes it).</summary>
+        private Item _npcItem;
         private float _runRatio = -1f;
 
         public HarnessRunner(string scenarioPath, string outputDir)
@@ -174,6 +177,11 @@ namespace BasHarness
                     return HitNpc(step, outcome);
                 case "npc-grab":
                     return NpcGrab(step, outcome);
+                case "npc-attack":
+                    NpcAttack(step, outcome);
+                    return Nothing();
+                case "player-grab-dropped":
+                    return PlayerGrabDropped(step, outcome);
                 case "expect-npc":
                     return ExpectNpc(step, outcome);
                 default:
@@ -773,6 +781,7 @@ namespace BasHarness
                 }
                 yield return null;
             }
+            _npcItem = item;
             hand.Grab(item.GetMainHandle(side), true);
             // The step checks the grab itself, right after Grab and again one frame later: a mod under test may
             // release it again on its next update (e.g. a disarmed NPC); whether the hand still holds it is
@@ -786,6 +795,53 @@ namespace BasHarness
                 yield break;
             }
             outcome.Detail = side + " hand " + (holdsNow ? "holds '" : "grabbed and released again by the next frame '") + item.data.id + "'";
+        }
+
+        /// <summary>
+        /// Raises the game's own attack event (EventManager.InvokeCreatureAttack, as BrainModuleMelee does) for the
+        /// spawned NPC against the player, melee. Only the event: the NPC does not swing.
+        /// </summary>
+        private void NpcAttack(Step step, Outcome outcome)
+        {
+            var player = Player.local != null ? Player.local.creature : null;
+            if (_npc == null || player == null)
+            {
+                outcome.Fail(_npc == null ? "no NPC (spawn-npc first)" : "no player creature");
+                return;
+            }
+            var stage = (BrainModuleAttack.AttackStage)Enum.Parse(typeof(BrainModuleAttack.AttackStage), step.Args[0], true);
+            EventManager.InvokeCreatureAttack(_npc, player, player.transform, BrainModuleAttack.AttackType.Melee, stage);
+            outcome.Detail = "raised " + stage + " (melee) from the NPC at the player";
+        }
+
+        /// <summary>The player's hand grabs the item the last npc-grab gave the NPC (RagdollHand.Grab, teleported to the hand).</summary>
+        private IEnumerator PlayerGrabDropped(Step step, Outcome outcome)
+        {
+            var player = Player.local != null ? Player.local.creature : null;
+            if (_npcItem == null || player == null)
+            {
+                outcome.Fail(_npcItem == null ? "no item (npc-grab first)" : "no player creature");
+                yield break;
+            }
+            if (_npcItem.handlers.Any(h => h != null && h.creature == _npc))
+            {
+                outcome.Fail("the NPC still holds '" + _npcItem.data.id + "'");
+                yield break;
+            }
+            var side = step.Named.TryGetValue("hand", out var handText) && handText.Equals("left", StringComparison.OrdinalIgnoreCase) ? Side.Left : Side.Right;
+            var hand = player.GetHand(side);
+            if (Holds(hand))
+            {
+                hand.TryRelease();
+            }
+            hand.Grab(_npcItem.GetMainHandle(side), true);
+            yield return null;
+            if (!_npcItem.handlers.Contains(hand))
+            {
+                outcome.Fail("the player's " + side + " hand did not grab '" + _npcItem.data.id + "'");
+                yield break;
+            }
+            outcome.Detail = "player's " + side + " hand holds '" + _npcItem.data.id + "'";
         }
 
         private static float Number(Step step, string key, float fallback)
