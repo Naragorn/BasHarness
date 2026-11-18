@@ -1019,9 +1019,13 @@ namespace BasHarness
             {
                 hand.transform.position = rest + (toNpc * metres);
                 yield return null;
-                if (hand.grip != null && ragdollHand.grip != null)
+                // The hand's side: the held handle (a physics body) when it holds one. RagdollHand.grip read here, in the
+                // coroutine, sat up to 0.6 m off the held sword while DMCS read it 3 cm off in the same frames (probe
+                // 2026-11-18), so the coroutine sees the hand bone in another pose than the physics one.
+                var handSide = ragdollHand.grabbedHandle != null ? ragdollHand.grabbedHandle.transform : ragdollHand.grip;
+                if (hand.grip != null && handSide != null)
                 {
-                    var lead = Vector3.Dot(hand.grip.position - ragdollHand.grip.position, toNpc);
+                    var lead = Vector3.Dot(hand.grip.position - handSide.position, toNpc);
                     min = Mathf.Min(min, lead);
                     max = Mathf.Max(max, lead);
                     sum += lead;
