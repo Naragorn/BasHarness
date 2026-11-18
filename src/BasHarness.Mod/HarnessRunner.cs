@@ -197,6 +197,8 @@ namespace BasHarness
                     return PlayerParry(step, outcome);
                 case "player-push":
                     return PlayerPush(step, outcome);
+                case "player-strike-weapon":
+                    return PlayerStrikeWeapon(step, outcome);
                 case "player-release":
                     PlayerRelease(step, outcome);
                     return Nothing();
@@ -900,6 +902,75 @@ namespace BasHarness
         }
 
         /// <summary>The player's hand grabs a newly spawned item (RagdollHand.Grab, teleported to the hand).</summary>
+        /// <summary>
+        /// player-strike-weapon [twist=°/s] [seconds=0.2]: the player's right controller brings the held blade's middle
+        /// beside the spawned NPC's held blade (0.35 m out, away from its body, in 0.6 s, then 0.7 s to settle), then strikes
+        /// through it (to 0.15 m on the body's side) in the seconds, rolling around the held blade's long axis at the twist
+        /// rate; then back, tracking again. For a mod that reacts
+        /// to blade-on-blade contact (the game's own collision events) and to a wrist twist.
+        /// </summary>
+        private IEnumerator PlayerStrikeWeapon(Step step, Outcome outcome)
+        {
+            var player = Player.local;
+            var hand = player != null ? player.handRight : null;
+            var ragdollHand = player != null && player.creature != null ? player.creature.handRight : null;
+            var mine = ragdollHand != null ? ragdollHand.grabbedHandle?.item : null;
+            var npcHand = _npc == null ? null : (Holds(_npc.handRight) ? _npc.handRight : Holds(_npc.handLeft) ? _npc.handLeft : null);
+            var theirs = npcHand != null ? npcHand.grabbedHandle.item : null;
+            if (hand == null || mine == null || theirs == null)
+            {
+                outcome.Fail(mine == null ? "the player holds nothing in the right hand" : "the NPC holds nothing (npc-grab first)");
+                yield break;
+            }
+            Vector3 Middle(Item item, Vector3 grip)
+            {
+                var tip = item.collisionHandlers.SelectMany(h => h.damagers).Where(d => d != null)
+                    .Select(d => d.transform.position).OrderByDescending(p => (p - grip).sqrMagnitude).DefaultIfEmpty(item.transform.position).First();
+                return (grip + tip) / 2f;
+            }
+            var myGrip = ragdollHand.grabbedHandle.transform.position;
+            var myMiddle = Middle(mine, myGrip);
+            var axis = (myMiddle - myGrip).normalized;
+            var theirMiddle = Middle(theirs, npcHand.grabbedHandle.transform.position);
+            // Come at the NPC's blade from outside its body: first bring the blade beside it (away from the torso),
+            // then strike through it towards the body.
+            var body = _npc.ragdoll != null && _npc.ragdoll.rootPart != null ? _npc.ragdoll.rootPart.transform.position : _npc.transform.position;
+            var outward = theirMiddle - body;
+            outward.y = 0f;
+            outward = outward.sqrMagnitude > 1e-4f ? outward.normalized : -_npc.transform.right;
+            var twist = Number(step, "twist", 0f);
+            var seconds = Number(step, "seconds", 0.2f);
+            var restPosition = hand.transform.position;
+            var restRotation = hand.transform.rotation;
+            var ready = restPosition + (theirMiddle + (outward * 0.35f) - myMiddle);
+            var through = restPosition + (theirMiddle - (outward * 0.15f) - myMiddle);
+            hand.SetTracking(false);
+            var start = Time.realtimeSinceStartup;
+            while (Time.realtimeSinceStartup - start < 0.6f)
+            {
+                hand.transform.position = Vector3.Lerp(restPosition, ready, (Time.realtimeSinceStartup - start) / 0.6f);
+                yield return null;
+            }
+            // Let the heavy hand catch up and any slow touch on the way pass its cooldown.
+            yield return new WaitForSecondsRealtime(0.7f);
+            start = Time.realtimeSinceStartup;
+            while (Time.realtimeSinceStartup - start < seconds)
+            {
+                var t = (Time.realtimeSinceStartup - start) / seconds;
+                hand.transform.position = Vector3.Lerp(ready, through, t);
+                hand.transform.rotation = Quaternion.AngleAxis(twist * (Time.realtimeSinceStartup - start), axis) * restRotation;
+                yield return null;
+            }
+            yield return new WaitForSecondsRealtime(0.2f);
+            hand.transform.position = restPosition;
+            hand.transform.rotation = restRotation;
+            hand.SetTracking(true);
+            var sweep = through - ready;
+            outcome.Detail = "swept '" + mine.data.id + "' " + sweep.magnitude.ToString("0.00", CultureInfo.InvariantCulture) + " m through the NPC's '"
+                + theirs.data.id + "' in " + seconds.ToString("0.00", CultureInfo.InvariantCulture) + " s, twisting "
+                + twist.ToString("0", CultureInfo.InvariantCulture) + "°/s around the blade";
+        }
+
         /// <summary>player-release [hand=right|left]: the player's hand lets go of what it holds (RagdollHand.TryRelease).</summary>
         private static void PlayerRelease(Step step, Outcome outcome)
         {

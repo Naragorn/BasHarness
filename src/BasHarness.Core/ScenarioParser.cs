@@ -115,6 +115,7 @@ namespace BasHarness.Core
             },
             ["player-grab"] = new Spec(1, 1, false, "hand") { Validate = (a, n) => OneOf(n, "hand", new[] { "left", "right" }) },
             ["player-parry"] = new Spec(0, 0, false, "offset") { Validate = (a, n) => NumberKey(n, "offset") },
+            ["player-strike-weapon"] = new Spec(0, 0, false, "twist", "seconds") { Validate = (a, n) => NumberKey(n, "twist") ?? SecondsKey(n, "seconds") },
             ["player-release"] = new Spec(0, 0, false, "hand") { Validate = (a, n) => OneOf(n, "hand", new[] { "left", "right" }) },
             ["player-push"] = new Spec(2, 2, false, "back")
             {
