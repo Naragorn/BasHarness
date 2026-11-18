@@ -195,6 +195,11 @@ namespace BasHarness
                     return PlayerGrab(step, outcome);
                 case "player-parry":
                     return PlayerParry(step, outcome);
+                case "player-push":
+                    return PlayerPush(step, outcome);
+                case "player-release":
+                    PlayerRelease(step, outcome);
+                    return Nothing();
                 case "player-grab-dropped":
                     return PlayerGrabDropped(step, outcome);
                 case "expect-npc":
@@ -895,6 +900,22 @@ namespace BasHarness
         }
 
         /// <summary>The player's hand grabs a newly spawned item (RagdollHand.Grab, teleported to the hand).</summary>
+        /// <summary>player-release [hand=right|left]: the player's hand lets go of what it holds (RagdollHand.TryRelease).</summary>
+        private static void PlayerRelease(Step step, Outcome outcome)
+        {
+            var player = Player.local != null ? Player.local.creature : null;
+            var side = step.Named.TryGetValue("hand", out var handText) && handText.Equals("left", StringComparison.OrdinalIgnoreCase) ? Side.Left : Side.Right;
+            var hand = player != null ? player.GetHand(side) : null;
+            if (hand == null || !Holds(hand))
+            {
+                outcome.Fail("the player's " + side + " hand holds nothing");
+                return;
+            }
+            var item = hand.grabbedHandle.item;
+            hand.TryRelease();
+            outcome.Detail = "player's " + side + " hand let go of '" + (item != null && item.data != null ? item.data.id : "?") + "'";
+        }
+
         private IEnumerator PlayerGrab(Step step, Outcome outcome)
         {
             var player = Player.local != null ? Player.local.creature : null;
@@ -966,6 +987,56 @@ namespace BasHarness
             EventManager.InvokeCreatureAttackParried(_npc, npcItem, player, playerItem, hit);
             outcome.Detail = "'" + npcItem.data.id + "' blocked by '" + playerItem.data.id + "' at " + point.ToString("F2") + " (" + Number(step, "offset", 0f).ToString("0.##", CultureInfo.InvariantCulture) + " m along the blade from its middle)";
             yield break;
+        }
+
+        /// <summary>
+        /// player-push &lt;metres&gt; &lt;seconds&gt; [back=true|false]: the player's right controller (the PlayerHand pose the
+        /// hand follows) moves the given metres towards the spawned NPC and stays there for the seconds, then (back=true,
+        /// default) returns to where it was and tracks the mock headset again. Reports how far the controller led the
+        /// hand (PlayerHand.grip vs RagdollHand.grip) towards the NPC: min / mean / max, for a mod that measures pushing.
+        /// </summary>
+        private IEnumerator PlayerPush(Step step, Outcome outcome)
+        {
+            var player = Player.local;
+            var hand = player != null ? player.handRight : null;
+            var ragdollHand = player != null && player.creature != null ? player.creature.handRight : null;
+            if (hand == null || ragdollHand == null || _npc == null || step.Args.Count < 2
+                || !ScenarioParser.TryParseNumber(step.Args[0], out var metres) || !ScenarioParser.TryParseSeconds(step.Args[1], out var seconds))
+            {
+                outcome.Fail(_npc == null ? "no spawned NPC to push towards (spawn-npc first)" : "usage: player-push <metres> <seconds> [back=true|false]");
+                yield break;
+            }
+            var back = !step.Named.TryGetValue("back", out var b) || b != "false";
+            var toNpc = _npc.transform.position - player.creature.transform.position;
+            toNpc.y = 0f;
+            toNpc = toNpc.sqrMagnitude > 1e-4f ? toNpc.normalized : player.creature.transform.forward;
+            var rest = hand.transform.position;
+            hand.SetTracking(false);
+            var start = Time.realtimeSinceStartup;
+            float min = float.PositiveInfinity, max = float.NegativeInfinity, sum = 0f;
+            var samples = 0;
+            while (Time.realtimeSinceStartup - start < seconds)
+            {
+                hand.transform.position = rest + (toNpc * metres);
+                yield return null;
+                if (hand.grip != null && ragdollHand.grip != null)
+                {
+                    var lead = Vector3.Dot(hand.grip.position - ragdollHand.grip.position, toNpc);
+                    min = Mathf.Min(min, lead);
+                    max = Mathf.Max(max, lead);
+                    sum += lead;
+                    samples++;
+                }
+            }
+            if (back)
+            {
+                hand.transform.position = rest;
+                hand.SetTracking(true);
+            }
+            outcome.Detail = "right controller " + metres.ToString("0.00", CultureInfo.InvariantCulture) + " m towards the NPC for "
+                + seconds.ToString("0.00", CultureInfo.InvariantCulture) + " s" + (back ? ", then back" : ", left there")
+                + (samples > 0 ? "; lead of the controller over the hand min " + min.ToString("0.000", CultureInfo.InvariantCulture)
+                    + " / mean " + (sum / samples).ToString("0.000", CultureInfo.InvariantCulture) + " / max " + max.ToString("0.000", CultureInfo.InvariantCulture) + " m" : "; no grip to measure");
         }
 
         private static float Number(Step step, string key, float fallback)

@@ -115,6 +115,13 @@ namespace BasHarness.Core
             },
             ["player-grab"] = new Spec(1, 1, false, "hand") { Validate = (a, n) => OneOf(n, "hand", new[] { "left", "right" }) },
             ["player-parry"] = new Spec(0, 0, false, "offset") { Validate = (a, n) => NumberKey(n, "offset") },
+            ["player-release"] = new Spec(0, 0, false, "hand") { Validate = (a, n) => OneOf(n, "hand", new[] { "left", "right" }) },
+            ["player-push"] = new Spec(2, 2, false, "back")
+            {
+                Validate = (a, n) => (!TryParseNumber(a[0], out _) ? "'" + a[0] + "' is not a number of metres"
+                    : !TryParseSeconds(a[1], out _) ? "'" + a[1] + "' is not a number of seconds >= 0" : null)
+                    ?? OneOf(n, "back", new[] { "true", "false" }),
+            },
             ["player-invincible"] = new Spec(1, 1, false)
             {
                 Validate = (a, n) => a[0] == "true" || a[0] == "false" ? null : "'" + a[0] + "' is not one of true, false",
