@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Concurrent;
 using System.IO;
+using System.Linq;
 using System.Threading;
 using BasHarness.Core;
 using ThunderRoad;
@@ -12,8 +13,9 @@ namespace BasHarness
 {
     /// <summary>
     /// Films a stretch of a scenario (record-start … record-stop) from up to three cameras: "side", 3 m beside the line between
-    /// the player and the spawned NPC so both are in view; "first", the player's own view (a copy of the head camera);
-    /// "npc", around the NPC's root part as screenshot of=npc (distance, rise, angle), for an NPC on the ground.
+    /// the player and the spawned NPC so both are in view; "first", from the player's eyes looking at the right hand (the head camera's place and layers);
+    /// "npc", around the NPC's root part as screenshot of=npc (distance, rise, angle), for an NPC on the ground; "hand", a
+    /// close-up of the player's right hand and blade from the side, for wrist gestures.
     /// Pictures are read back from the GPU without waiting (AsyncGPUReadback) and appended by a background thread to one
     /// raw RGBA file per view, at a fixed frame rate in real time (FilmFrames); the runner turns them into videos.
     /// </summary>
@@ -69,7 +71,7 @@ namespace BasHarness
                 _cameras[i] = go.AddComponent<Camera>();
                 _cameras[i].targetTexture = _textures[i];
                 _cameras[i].nearClipPlane = 0.03f;
-                if (views[i] != "first" && HeadRenderer.Index >= 0)
+                if (views[i] != "first" && views[i] != "hand" && HeadRenderer.Index >= 0)
                 {
                     _cameras[i].GetUniversalAdditionalCameraData().SetRenderer(HeadRenderer.Index);
                 }
@@ -204,10 +206,37 @@ namespace BasHarness
                     var head = player != null && player.head != null ? player.head.cam : null;
                     if (head != null)
                     {
-                        cam.transform.SetPositionAndRotation(head.transform.position, head.transform.rotation);
+                        // From the player's eyes, looking at the right hand (a player watches the blades; the mock
+                        // headset only ever looks straight ahead, so the strike at hip height was out of the picture).
+                        var lookAt = body != null && body.handRight != null ? body.handRight.transform.position : head.transform.position + head.transform.forward;
+                        cam.transform.position = head.transform.position;
+                        cam.transform.LookAt(Vector3.Lerp(lookAt, npc != null ? npc.transform.position + (Vector3.up * 1.0f) : lookAt, 0.3f));
                         cam.fieldOfView = 90f;
                         cam.cullingMask = head.cullingMask;
                     }
+                    continue;
+                }
+                if (_views[i] == "hand")
+                {
+                    // Close-up of the player's right hand and its blade, from the side of the player-NPC line, so a
+                    // roll of the wrist shows (the other views are too far away for it).
+                    var hand = body != null ? body.handRight : null;
+                    if (hand == null)
+                    {
+                        continue;
+                    }
+                    var grip = hand.grabbedHandle != null ? hand.grabbedHandle.transform.position : hand.transform.position;
+                    var item = hand.grabbedHandle != null ? hand.grabbedHandle.item : null;
+                    var tip = item == null ? grip : item.collisionHandlers.SelectMany(h => h.damagers).Where(d => d != null)
+                        .Select(d => d.transform.position).OrderByDescending(p => (p - grip).sqrMagnitude).DefaultIfEmpty(grip).First();
+                    var focus = (grip * 0.6f) + (tip * 0.4f);
+                    var toNpc = npc != null ? npc.transform.position - body.transform.position : body.transform.forward;
+                    toNpc.y = 0f;
+                    var side = Vector3.Cross(Vector3.up, toNpc.sqrMagnitude > 1e-4f ? toNpc.normalized : body.transform.forward);
+                    // From above the side: level with the hand the player's own hip and leg filled the picture (2026-11-20).
+                    cam.fieldOfView = 55f;
+                    cam.transform.position = focus + (side * 0.55f) + (Vector3.up * 0.65f);
+                    cam.transform.LookAt(focus);
                     continue;
                 }
                 if (_views[i] == "npc")

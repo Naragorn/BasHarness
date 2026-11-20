@@ -115,16 +115,24 @@ namespace BasHarness.Core
             },
             ["player-grab"] = new Spec(1, 1, false, "hand") { Validate = (a, n) => OneOf(n, "hand", new[] { "left", "right" }) },
             ["player-parry"] = new Spec(0, 0, false, "offset") { Validate = (a, n) => NumberKey(n, "offset") },
-            ["player-strike-weapon"] = new Spec(0, 0, false, "twist", "seconds") { Validate = (a, n) => NumberKey(n, "twist") ?? SecondsKey(n, "seconds") },
+            ["player-strike-weapon"] = new Spec(0, 0, false, "twist", "seconds", "approach", "settle", "depth", "phase")
+            {
+                Validate = (a, n) => NumberKey(n, "twist") ?? SecondsKey(n, "seconds") ?? SecondsKey(n, "approach") ?? SecondsKey(n, "settle") ?? NumberKey(n, "depth")
+                    ?? OneOf(n, "phase", new[] { "all", "ready", "strike" }),
+            },
             ["record-start"] = new Spec(1, 1, false, "fps", "width", "height", "views", "distance", "rise", "angle")
             {
                 Validate = (a, n) => WholeKey(n, "fps") ?? WholeKey(n, "width") ?? WholeKey(n, "height")
                     ?? NumberKey(n, "distance") ?? NumberKey(n, "rise") ?? NumberKey(n, "angle")
-                    ?? (n.TryGetValue("views", out var v) && v.Split(',').Any(x => x != "side" && x != "first" && x != "npc")
-                        ? "views: '" + v + "' is not a list of side, first, npc"
+                    ?? (n.TryGetValue("views", out var v) && v.Split(',').Any(x => x != "side" && x != "first" && x != "npc" && x != "hand")
+                        ? "views: '" + v + "' is not a list of side, first, npc, hand"
                         : null),
             },
             ["record-stop"] = new Spec(0, 0, false),
+            ["frame-rate"] = new Spec(1, 1, false)
+            {
+                Validate = (a, n) => int.TryParse(a[0], NumberStyles.Integer, CultureInfo.InvariantCulture, out var f) && f > 0 ? null : "'" + a[0] + "' is not a whole number of frames per second above 0",
+            },
             ["player-release"] = new Spec(0, 0, false, "hand") { Validate = (a, n) => OneOf(n, "hand", new[] { "left", "right" }) },
             ["player-push"] = new Spec(2, 2, false, "back")
             {
