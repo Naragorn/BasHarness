@@ -22,7 +22,7 @@ public class CombatStepParserTests
             "turn-player -90",
             "player-invincible true",
             "player-grab SwordShortCommon hand=left",
-            "player-parry offset=0.4",
+            "player-parry offset=0.4 swing=5",
             "player-push 0.15 2.2 back=false",
             "player-release hand=right",
             "player-strike-weapon twist=600 seconds=0.3 approach=0.3 settle=0.2 phase=ready",
@@ -89,6 +89,7 @@ public class CombatStepParserTests
     [InlineData("player-grab SwordShortCommon hand=both", "hand: 'both' is not one of left, right")]
     [InlineData("player-parry now", "expects 0")]
     [InlineData("player-parry offset=x", "offset: 'x' is not a number")]
+    [InlineData("player-parry swing=hard", "swing: 'hard' is not a number")]
     [InlineData("player-release now", "expects 0")]
     [InlineData("player-strike-weapon twist=fast", "twist: 'fast' is not a number")]
     [InlineData("record-start", "expects 1")]

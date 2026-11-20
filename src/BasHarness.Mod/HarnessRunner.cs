@@ -1195,6 +1195,10 @@ namespace BasHarness
         /// Raises the game's own block event (EventManager.InvokeCreatureAttackParried, as BrainModuleMelee does when an NPC's
         /// swing hits a held weapon) for the spawned NPC's attacking weapon (the hand of its running attack, else the right) against the player's right-hand item, with the
         /// contact at the middle between the NPC's grip and the damager furthest from it, moved `offset` m along the blade. No physics contact.
+        /// swing=&lt;m/s&gt;: first the player's right controller (the PlayerHand pose the hand follows) sweeps sideways, to the
+        /// player's right (away from the NPC, so the sword touches nothing), at that speed for <see cref="ParrySweepSeconds"/>;
+        /// the event comes at the end of the sweep, then the controller glides back and tracks the mock headset again. For a
+        /// mod that reads how fast the player's hand moved into the parry.
         /// </summary>
         private IEnumerator PlayerParry(Step step, Outcome outcome)
         {
@@ -1215,6 +1219,27 @@ namespace BasHarness
                 .Select(d => d.transform.position).OrderByDescending(p => (p - grip).sqrMagnitude).DefaultIfEmpty(npcItem.transform.position).First();
             var axis = (tip - grip).normalized;
             var point = ((grip + tip) / 2f) + (axis * Number(step, "offset", 0f));
+            var swing = Number(step, "swing", 0f);
+            var hand = Player.local.handRight;
+            var rest = hand.transform.position;
+            var swept = 0f;
+            if (swing > 0f)
+            {
+                var side = player.transform.right;
+                side.y = 0f;
+                side = side.sqrMagnitude > 1e-4f ? side.normalized : Vector3.right;
+                hand.SetTracking(false);
+                var start = Time.realtimeSinceStartup;
+                while (Time.realtimeSinceStartup - start < ParrySweepSeconds)
+                {
+                    swept = Time.realtimeSinceStartup - start;
+                    hand.transform.position = rest + (side * (swing * swept));
+                    yield return null;
+                }
+                swept = Time.realtimeSinceStartup - start;
+                hand.transform.position = rest + (side * (swing * swept));
+                yield return null;
+            }
             var hit = new CollisionInstance(new DamageStruct(DamageType.Blunt, 0f))
             {
                 sourceColliderGroup = npcItem.colliderGroups.FirstOrDefault(),
@@ -1223,9 +1248,28 @@ namespace BasHarness
                 contactPoint = point,
             };
             EventManager.InvokeCreatureAttackParried(_npc, npcItem, player, playerItem, hit);
-            outcome.Detail = "'" + npcItem.data.id + "' blocked by '" + playerItem.data.id + "' at " + point.ToString("F2") + " (" + Number(step, "offset", 0f).ToString("0.##", CultureInfo.InvariantCulture) + " m along the blade from its middle)";
-            yield break;
+            outcome.Detail = "'" + npcItem.data.id + "' blocked by '" + playerItem.data.id + "' at " + point.ToString("F2") + " (" + Number(step, "offset", 0f).ToString("0.##", CultureInfo.InvariantCulture) + " m along the blade from its middle)"
+                + (swing > 0f ? "; the right controller swept " + (swing * swept).ToString("0.00", CultureInfo.InvariantCulture) + " m in " + swept.ToString("0.00", CultureInfo.InvariantCulture) + " s before it" : "");
+            if (swing > 0f)
+            {
+                // Glide back (an instant snap would be a speed spike of its own), then track the headset again.
+                var from = hand.transform.position;
+                var start = Time.realtimeSinceStartup;
+                while (Time.realtimeSinceStartup - start < ParryReturnSeconds)
+                {
+                    hand.transform.position = Vector3.Lerp(from, rest, (Time.realtimeSinceStartup - start) / ParryReturnSeconds);
+                    yield return null;
+                }
+                hand.transform.position = rest;
+                hand.SetTracking(true);
+            }
         }
+
+        /// <summary>player-parry swing=: how long the controller sweeps before the block event (s).</summary>
+        private const float ParrySweepSeconds = 0.12f;
+
+        /// <summary>player-parry swing=: how long the controller glides back afterwards (s).</summary>
+        private const float ParryReturnSeconds = 0.8f;
 
         /// <summary>
         /// player-push &lt;metres&gt; &lt;seconds&gt; [back=true|false]: the player's right controller (the PlayerHand pose the

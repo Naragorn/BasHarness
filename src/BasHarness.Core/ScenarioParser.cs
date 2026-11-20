@@ -114,7 +114,7 @@ namespace BasHarness.Core
                 Validate = (a, n) => TryParseNumber(a[0], out _) ? null : "'" + a[0] + "' is not a number of degrees",
             },
             ["player-grab"] = new Spec(1, 1, false, "hand") { Validate = (a, n) => OneOf(n, "hand", new[] { "left", "right" }) },
-            ["player-parry"] = new Spec(0, 0, false, "offset") { Validate = (a, n) => NumberKey(n, "offset") },
+            ["player-parry"] = new Spec(0, 0, false, "offset", "swing") { Validate = (a, n) => NumberKey(n, "offset") ?? NumberKey(n, "swing") },
             ["player-strike-weapon"] = new Spec(0, 0, false, "twist", "seconds", "approach", "settle", "depth", "phase")
             {
                 Validate = (a, n) => NumberKey(n, "twist") ?? SecondsKey(n, "seconds") ?? SecondsKey(n, "approach") ?? SecondsKey(n, "settle") ?? NumberKey(n, "depth")
