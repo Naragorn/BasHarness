@@ -217,6 +217,18 @@ class FilmCommandsTests(unittest.TestCase):
         self.assertEqual(outs, ["/d/twist-first.mp4", "/d/twist-slow.mp4", "/d/twist.gif", "/d/twist-slow.gif"])
         self.assertEqual(logic.film_commands(film, "/d")[1][logic.film_commands(film, "/d")[1].index("-i") + 1], "/d/twist-first.mp4")
 
+    def test_a_long_film_gets_no_slow_gif(self):
+        outs = [c[-1] for c in logic.film_commands(dict(self.FILM, frames=60 * 7), "/d")]
+        self.assertIn("/d/twist.gif", outs)
+        self.assertNotIn("/d/twist-slow.gif", outs)
+        self.assertIn("/d/twist-slow.mp4", outs)
+
+    def test_gifs_are_capped_at_640_wide_and_12_fps(self):
+        gif = logic.film_commands(self.FILM, "/d")[4]
+        vf = gif[gif.index("-vf") + 1]
+        self.assertIn("fps=12", vf)
+        self.assertIn("min(640,iw)", vf)
+
     def test_an_empty_film_makes_nothing(self):
         self.assertEqual(logic.film_commands(dict(self.FILM, frames=0), "/d"), [])
         self.assertEqual(logic.film_commands(dict(self.FILM, views=[]), "/d"), [])

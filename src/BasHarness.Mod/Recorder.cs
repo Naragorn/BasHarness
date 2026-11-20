@@ -6,6 +6,7 @@ using BasHarness.Core;
 using ThunderRoad;
 using UnityEngine;
 using UnityEngine.Rendering;
+using UnityEngine.Rendering.Universal;
 
 namespace BasHarness
 {
@@ -68,6 +69,10 @@ namespace BasHarness
                 _cameras[i] = go.AddComponent<Camera>();
                 _cameras[i].targetTexture = _textures[i];
                 _cameras[i].nearClipPlane = 0.03f;
+                if (views[i] != "first" && HeadRenderer.Index >= 0)
+                {
+                    _cameras[i].GetUniversalAdditionalCameraData().SetRenderer(HeadRenderer.Index);
+                }
                 _files[i] = new FileStream(Path.Combine(dir, name + "-" + views[i] + ".rgba"), FileMode.Create, FileAccess.Write, FileShare.Read, 1 << 20);
                 _lastWritten[i] = -1;
             }
@@ -76,7 +81,7 @@ namespace BasHarness
         }
 
         public string Describe => _views.Length + " view(s) " + string.Join(", ", _views) + " at " + _width + "x" + _height + ", " + _fps
-            + " fps, readback " + (_async ? "async" : "sync");
+            + " fps, readback " + (_async ? "async" : "sync") + "; " + HeadRenderer.Found;
 
         public System.Collections.IEnumerator Run()
         {
@@ -235,6 +240,56 @@ namespace BasHarness
                 cam.fieldOfView = 55f;
                 cam.transform.position = middle + (across * 3.0f) + (Vector3.up * 1.2f);
                 cam.transform.LookAt(middle + (Vector3.up * 0.95f));
+            }
+        }
+    }
+
+    /// <summary>
+    /// The URP renderer that also draws the player's head. The game puts the player's head meshes on the FPVHide layer
+    /// (Creature.RefreshRenderers) so the headset does not see them; a camera on the default renderer then shows the
+    /// player without a head. This picks the first renderer of the pipeline asset whose opaque layer mask has both the
+    /// FPVHide and the Default layer (so it draws the world too); -1 when there is none (then the head stays hidden).
+    /// </summary>
+    internal static class HeadRenderer
+    {
+        private static int? _index;
+
+        public static string Found { get; private set; } = "head renderer not looked for";
+
+        public static int Index
+        {
+            get
+            {
+                if (_index.HasValue)
+                {
+                    return _index.Value;
+                }
+                _index = -1;
+                try
+                {
+                    var asset = GraphicsSettings.currentRenderPipeline as UniversalRenderPipelineAsset;
+                    var field = typeof(UniversalRenderPipelineAsset).GetField("m_RendererDataList",
+                        System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Public);
+                    var list = asset != null && field != null ? field.GetValue(asset) as ScriptableRendererData[] : null;
+                    var fpv = 1 << GameManager.GetLayer(LayerName.FPVHide);
+                    var world = 1 << LayerMask.NameToLayer("Default");
+                    var seen = new System.Text.StringBuilder();
+                    for (var i = 0; list != null && i < list.Length; i++)
+                    {
+                        var mask = list[i] is UniversalRendererData u ? u.opaqueLayerMask.value : 0;
+                        seen.Append(i).Append(':').Append(list[i] != null ? list[i].name : "null").Append(" mask 0x").Append(mask.ToString("X")).Append(' ');
+                        if (_index < 0 && (mask & fpv) != 0 && (mask & world) != 0)
+                        {
+                            _index = i;
+                        }
+                    }
+                    Found = "head renderer " + _index + " (renderers " + seen.ToString().Trim() + ")";
+                }
+                catch (Exception ex)
+                {
+                    Found = "head renderer lookup failed: " + ex.Message;
+                }
+                return _index.Value;
             }
         }
     }
