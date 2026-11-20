@@ -200,3 +200,38 @@ def summary_markdown(name: str, result: str, report: Report, reasons: Sequence[s
     if report.result:
         lines += ["", f"Harness result: {report.result[0]} {report.result[1]}/{report.result[2]}"]
     return "\n".join(lines) + "\n"
+
+
+SLOW_FACTOR = 4
+
+
+def film_commands(film: Dict, folder: str, ffmpeg: str = "ffmpeg") -> List[List[str]]:
+    """ffmpeg calls that turn one film (its .film.json, written by the in-game Recorder) into videos.
+
+    Per view a real-pace MP4 (the raw pictures come bottom row first, so they are flipped); with two views also both
+    side by side; then the side-by-side (or the single view) slowed down 4x as MP4, and both paces as GIF.
+    """
+    name, w, h, fps, views = film["name"], int(film["width"]), int(film["height"]), int(film["fps"]), list(film["views"])
+    if not views or int(film.get("frames", 0)) <= 0:
+        return []
+    p = lambda f: folder.rstrip("/") + "/" + f  # noqa: E731
+    h264 = ["-c:v", "libx264", "-pix_fmt", "yuv420p", "-crf", "20"]
+    calls: List[List[str]] = []
+    for view in views:
+        calls.append([ffmpeg, "-y", "-loglevel", "error", "-f", "rawvideo", "-pix_fmt", "rgba", "-s", f"{w}x{h}",
+                      "-r", str(fps), "-i", p(f"{name}-{view}.rgba"), "-vf", "vflip", *h264, p(f"{name}-{view}.mp4")])
+    if len(views) > 1:
+        inputs: List[str] = []
+        for view in views:
+            inputs += ["-i", p(f"{name}-{view}.mp4")]
+        calls.append([ffmpeg, "-y", "-loglevel", "error", *inputs, "-filter_complex", f"hstack=inputs={len(views)}",
+                      *h264, p(f"{name}.mp4")])
+        main = p(f"{name}.mp4")
+    else:
+        main = p(f"{name}-{views[0]}.mp4")
+    calls.append([ffmpeg, "-y", "-loglevel", "error", "-i", main, "-vf", f"setpts={SLOW_FACTOR}*PTS", "-r", str(fps),
+                  *h264, p(f"{name}-slow.mp4")])
+    gif = "fps=15,scale=960:-2:flags=lanczos,split[a][b];[a]palettegen[p];[b][p]paletteuse"
+    calls.append([ffmpeg, "-y", "-loglevel", "error", "-i", main, "-vf", gif, p(f"{name}.gif")])
+    calls.append([ffmpeg, "-y", "-loglevel", "error", "-i", p(f"{name}-slow.mp4"), "-vf", gif, p(f"{name}-slow.gif")])
+    return calls

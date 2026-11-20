@@ -192,3 +192,31 @@ class SummaryTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class FilmCommandsTests(unittest.TestCase):
+    FILM = {"name": "twist", "width": 640, "height": 360, "fps": 60, "views": ["side", "first"], "frames": 120, "repeated": 0}
+
+    def test_two_views_give_one_video_each_then_side_by_side_slow_and_gifs(self):
+        calls = logic.film_commands(self.FILM, "/run/x/")
+        outs = [c[-1] for c in calls]
+        self.assertEqual(outs, ["/run/x/twist-side.mp4", "/run/x/twist-first.mp4", "/run/x/twist.mp4",
+                                "/run/x/twist-slow.mp4", "/run/x/twist.gif", "/run/x/twist-slow.gif"])
+        first = calls[0]
+        self.assertIn("rawvideo", first)
+        self.assertEqual(first[first.index("-s") + 1], "640x360")
+        self.assertEqual(first[first.index("-r") + 1], "60")
+        self.assertEqual(first[first.index("-i") + 1], "/run/x/twist-side.rgba")
+        self.assertIn("vflip", first)
+        self.assertIn("hstack=inputs=2", calls[2])
+        self.assertIn("setpts=4*PTS", calls[3])
+
+    def test_one_view_has_no_side_by_side(self):
+        film = dict(self.FILM, views=["first"])
+        outs = [c[-1] for c in logic.film_commands(film, "/d")]
+        self.assertEqual(outs, ["/d/twist-first.mp4", "/d/twist-slow.mp4", "/d/twist.gif", "/d/twist-slow.gif"])
+        self.assertEqual(logic.film_commands(film, "/d")[1][logic.film_commands(film, "/d")[1].index("-i") + 1], "/d/twist-first.mp4")
+
+    def test_an_empty_film_makes_nothing(self):
+        self.assertEqual(logic.film_commands(dict(self.FILM, frames=0), "/d"), [])
+        self.assertEqual(logic.film_commands(dict(self.FILM, views=[]), "/d"), [])

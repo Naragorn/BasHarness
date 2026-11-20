@@ -26,13 +26,15 @@ public class CombatStepParserTests
             "player-push 0.15 2.2 back=false",
             "player-release hand=right",
             "player-strike-weapon twist=600 seconds=0.3",
+            "record-start twist fps=60 width=640 height=360 views=side,first,npc distance=2 rise=0.6 angle=90",
+            "record-stop",
             "npc-grab DaggerCommon",
             "npc-grab SwordShortCommon hand=left",
             "expect-npc holding true",
             "expect-npc brain HumanDummy"));
 
         Assert.Empty(s.Errors);
-        Assert.Equal(new[] { "spawn-npc", "run", "expect-player-speed", "expect-player-speed", "hit-npc", "expect-npc", "expect-npc", "stop-run", "turn-player", "turn-player", "player-invincible", "player-grab", "player-parry", "player-push", "player-release", "player-strike-weapon", "npc-grab", "npc-grab", "expect-npc", "expect-npc" },
+        Assert.Equal(new[] { "spawn-npc", "run", "expect-player-speed", "expect-player-speed", "hit-npc", "expect-npc", "expect-npc", "stop-run", "turn-player", "turn-player", "player-invincible", "player-grab", "player-parry", "player-push", "player-release", "player-strike-weapon", "record-start", "record-stop", "npc-grab", "npc-grab", "expect-npc", "expect-npc" },
             s.Steps.Select(x => x.Verb));
         Assert.Equal("HumanMedium", s.Steps[0].Named["brain"]);
         Assert.Equal("1.5", s.Steps[5].Named["within"]);
@@ -88,6 +90,11 @@ public class CombatStepParserTests
     [InlineData("player-parry offset=x", "offset: 'x' is not a number")]
     [InlineData("player-release now", "expects 0")]
     [InlineData("player-strike-weapon twist=fast", "twist: 'fast' is not a number")]
+    [InlineData("record-start", "expects 1")]
+    [InlineData("record-start x fps=fast", "fps: 'fast'")]
+    [InlineData("record-start x views=side,top", "views: 'side,top' is not a list of side, first, npc")]
+    [InlineData("record-start x rise=up", "rise: 'up' is not a number")]
+    [InlineData("record-stop now", "expects 0")]
     [InlineData("player-strike-weapon seconds=-1", "seconds: '-1' is not a number of seconds >= 0")]
     [InlineData("player-release hand=both", "hand: 'both' is not one of left, right")]
     [InlineData("player-push 0.1", "expects 2")]

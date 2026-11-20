@@ -17,6 +17,7 @@ Exit code 0 = all PASS, 1 = a FAIL, 2 = could not run.
 from __future__ import annotations
 
 import argparse
+import json
 import os
 import shutil
 import signal
@@ -190,6 +191,7 @@ def run_scenario(args: argparse.Namespace, scenario: Path, mirror: Path, home: P
 
     text = log.read_text(errors="replace") if log.exists() else ""
     (run_dir / "Player.log").write_text(text)
+    make_films(run_dir)
     report = logic.parse_report(text)
     result, reasons = logic.verdict(report, timed_out)
     seconds = time.time() - started
@@ -200,6 +202,21 @@ def run_scenario(args: argparse.Namespace, scenario: Path, mirror: Path, home: P
         say(f"  ! {reason}")
     say(f"{name}: {result} ({seconds:.0f} s) -> {run_dir / 'summary.md'}")
     return result
+
+
+def make_films(run_dir: Path) -> None:
+    """Turns every film the scenario recorded (record-start ... record-stop) into MP4 and GIF; drops the raw pictures."""
+    for sidecar in sorted(run_dir.glob("*.film.json")):
+        film = json.loads(sidecar.read_text())
+        calls = logic.film_commands(film, str(run_dir))
+        failed = next((c for c in calls if subprocess.run(c).returncode != 0), None)
+        if failed is not None:
+            say(f"film {film['name']}: ffmpeg failed on {failed[-1]}; raw pictures kept")
+            continue
+        for raw in run_dir.glob(f"{film['name']}-*.rgba"):
+            raw.unlink()
+        say(f"film {film['name']}: {film['frames']} frames at {film['fps']} fps ({film['repeated']} repeated) -> "
+            f"{run_dir / (film['name'] + ('.mp4' if len(film['views']) > 1 else '-' + film['views'][0] + '.mp4'))}")
 
 
 def parse_args(argv: List[str]) -> argparse.Namespace:

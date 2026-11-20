@@ -116,6 +116,15 @@ namespace BasHarness.Core
             ["player-grab"] = new Spec(1, 1, false, "hand") { Validate = (a, n) => OneOf(n, "hand", new[] { "left", "right" }) },
             ["player-parry"] = new Spec(0, 0, false, "offset") { Validate = (a, n) => NumberKey(n, "offset") },
             ["player-strike-weapon"] = new Spec(0, 0, false, "twist", "seconds") { Validate = (a, n) => NumberKey(n, "twist") ?? SecondsKey(n, "seconds") },
+            ["record-start"] = new Spec(1, 1, false, "fps", "width", "height", "views", "distance", "rise", "angle")
+            {
+                Validate = (a, n) => WholeKey(n, "fps") ?? WholeKey(n, "width") ?? WholeKey(n, "height")
+                    ?? NumberKey(n, "distance") ?? NumberKey(n, "rise") ?? NumberKey(n, "angle")
+                    ?? (n.TryGetValue("views", out var v) && v.Split(',').Any(x => x != "side" && x != "first" && x != "npc")
+                        ? "views: '" + v + "' is not a list of side, first, npc"
+                        : null),
+            },
+            ["record-stop"] = new Spec(0, 0, false),
             ["player-release"] = new Spec(0, 0, false, "hand") { Validate = (a, n) => OneOf(n, "hand", new[] { "left", "right" }) },
             ["player-push"] = new Spec(2, 2, false, "back")
             {

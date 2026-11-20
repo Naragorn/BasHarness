@@ -202,6 +202,12 @@ namespace BasHarness
                 case "player-release":
                     PlayerRelease(step, outcome);
                     return Nothing();
+                case "record-start":
+                    RecordStart(step, outcome);
+                    return Nothing();
+                case "record-stop":
+                    RecordStop(outcome);
+                    return Nothing();
                 case "player-grab-dropped":
                     return PlayerGrabDropped(step, outcome);
                 case "expect-npc":
@@ -969,6 +975,38 @@ namespace BasHarness
             outcome.Detail = "swept '" + mine.data.id + "' " + sweep.magnitude.ToString("0.00", CultureInfo.InvariantCulture) + " m through the NPC's '"
                 + theirs.data.id + "' in " + seconds.ToString("0.00", CultureInfo.InvariantCulture) + " s, twisting "
                 + twist.ToString("0", CultureInfo.InvariantCulture) + "°/s around the blade";
+        }
+
+        private Recorder _recorder;
+
+        /// <summary>
+        /// record-start &lt;name&gt; [fps=60] [width=640] [height=360] [views=side,first] [distance=2.5] [rise=1.2] [angle=0]:
+        /// films until record-stop. distance/rise/angle place the "npc" view as screenshot of=npc places its camera.
+        /// </summary>
+        private void RecordStart(Step step, Outcome outcome)
+        {
+            if (_recorder != null)
+            {
+                outcome.Fail("already filming; record-stop first");
+                return;
+            }
+            var views = step.Named.TryGetValue("views", out var v) ? v.Split(',') : new[] { "side", "first" };
+            _recorder = new Recorder(step.Args[0], _outputDir, (int)Number(step, "fps", 60f), (int)Number(step, "width", 640f),
+                (int)Number(step, "height", 360f), views, () => _npc,
+                Number(step, "distance", 2.5f), Number(step, "rise", 1.2f), Number(step, "angle", 0f));
+            GameManager.local.StartCoroutine(_recorder.Run());
+            outcome.Detail = "filming " + _recorder.Describe;
+        }
+
+        private void RecordStop(Outcome outcome)
+        {
+            if (_recorder == null)
+            {
+                outcome.Fail("not filming; record-start first");
+                return;
+            }
+            outcome.Detail = _recorder.Stop();
+            _recorder = null;
         }
 
         /// <summary>player-release [hand=right|left]: the player's hand lets go of what it holds (RagdollHand.TryRelease).</summary>
