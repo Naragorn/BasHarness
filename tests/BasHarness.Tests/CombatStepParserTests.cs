@@ -112,6 +112,8 @@ public class CombatStepParserTests
     [InlineData("turn-player", "expects 1")]
     [InlineData("player-invincible", "expects 1")]
     [InlineData("player-invincible yes", "'yes' is not one of true, false")]
+    [InlineData("player-skill MightyKick", "expects 2")]
+    [InlineData("player-skill MightyKick bought", "'bought' is not one of true, false")]
     [InlineData("turn-player left", "'left' is not a number")]
     [InlineData("npc-grab", "expects 1")]
     [InlineData("npc-grab DaggerCommon hand=both", "hand: 'both' is not one of left, right")]
@@ -130,6 +132,16 @@ public class CombatStepParserTests
         var error = Assert.Single(s.Errors);
         Assert.StartsWith("line 2:", error);
         Assert.Contains(expected, error);
+    }
+
+    [Fact]
+    public void PlayerSkill_TakesASkillIdAndTrueOrFalse()
+    {
+        var s = ScenarioParser.Parse("wait-level\nplayer-skill MightyKick true\nplayer-skill DMCS_Parry false");
+
+        Assert.Empty(s.Errors);
+        Assert.Equal(new[] { "player-skill", "player-skill" }, s.Steps.Skip(1).Select(x => x.Verb));
+        Assert.Equal(new[] { "DMCS_Parry", "false" }, s.Steps[2].Args);
     }
 }
 

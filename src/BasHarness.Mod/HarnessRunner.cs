@@ -179,6 +179,9 @@ namespace BasHarness
                     Player.invincibility = step.Args[0] == "true";
                     outcome.Detail = "Player.invincibility = " + Player.invincibility;
                     return Nothing();
+                case "player-skill":
+                    PlayerSkill(step, outcome);
+                    return Nothing();
                 case "turn-player":
                     TurnPlayer(step, outcome);
                     return Nothing();
@@ -542,6 +545,36 @@ namespace BasHarness
             _runRatio = -1f;
             Player.local?.locomotion?.MoveStop();
             outcome.Detail = "stopped";
+        }
+
+        /// <summary>
+        /// Gives the player a skill or takes it away, the way buying and refunding at the skill tree does: through the
+        /// player creature's container (Creature.TryAddSkill / TryRemoveSkill), whose change the game's Mana answers
+        /// with Creature.ForceLoadSkill / ForceUnloadSkill (SkillData.OnSkillLoadedEvent / OnSkillUnloadedEvent).
+        /// </summary>
+        private static void PlayerSkill(Step step, Outcome outcome)
+        {
+            var id = step.Args[0];
+            var want = step.Args[1] == "true";
+            var creature = Player.currentCreature;
+            if (creature == null)
+            {
+                outcome.Fail("no player creature");
+                return;
+            }
+            if (!Catalog.TryGetData<SkillData>(id, out var data, false) || data == null)
+            {
+                outcome.Fail("skill '" + id + "' is not in the catalog");
+                return;
+            }
+            var ok = want ? creature.TryAddSkill(data) : creature.TryRemoveSkill(data);
+            var has = creature.HasSkill(id);
+            if (!ok || has != want)
+            {
+                outcome.Fail("player-skill " + id + " " + step.Args[1] + ": the player " + (has ? "still has" : "does not have") + " it");
+                return;
+            }
+            outcome.Detail = "the player " + (want ? "has" : "no longer has") + " the skill " + id + " (" + data.primarySkillTreeId + " tier " + (data.tier + 1) + ")";
         }
 
         /// <summary>

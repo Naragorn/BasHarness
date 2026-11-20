@@ -144,6 +144,10 @@ namespace BasHarness.Core
             {
                 Validate = (a, n) => a[0] == "true" || a[0] == "false" ? null : "'" + a[0] + "' is not one of true, false",
             },
+            ["player-skill"] = new Spec(2, 2, false)
+            {
+                Validate = (a, n) => a[1] == "true" || a[1] == "false" ? null : "'" + a[1] + "' is not one of true, false",
+            },
             ["expect-player-speed"] = new Spec(1, 2, false) { Validate = (a, n) => SpeedRange(a) },
             ["hit-npc"] = new Spec(1, 1, false, "velocity", "damage", "push", "type", "by", "item", "dead", "swing")
             {
