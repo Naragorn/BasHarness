@@ -206,10 +206,7 @@ namespace BasHarness
                     RecordStart(step, outcome);
                     return Nothing();
                 case "frame-rate":
-                    QualitySettings.vSyncCount = 0;
-                    Application.targetFrameRate = int.Parse(step.Args[0], CultureInfo.InvariantCulture);
-                    outcome.Detail = "frame rate capped at " + Application.targetFrameRate + " fps";
-                    return Nothing();
+                    return FrameRate(step, outcome);
                 case "record-stop":
                     RecordStop(outcome);
                     return Nothing();
@@ -1051,6 +1048,62 @@ namespace BasHarness
             outcome.Detail = "swept '" + s.Mine.data.id + "' " + (through - from).magnitude.ToString("0.00", CultureInfo.InvariantCulture) + " m through the NPC's '"
                 + s.Theirs.data.id + "' in " + seconds.ToString("0.00", CultureInfo.InvariantCulture) + " s, twisting "
                 + twist.ToString("0", CultureInfo.InvariantCulture) + "°/s around the blade";
+        }
+
+        private static float _frameCap;
+        private static bool _limiterRunning;
+
+        /// <summary>
+        /// frame-rate &lt;fps&gt;: caps the frame rate for the rest of the run with a frame limiter of its own (at the end of
+        /// each frame it waits until 1/fps s have passed since the last). Application.targetFrameRate alone did nothing:
+        /// with XR on, the XR runtime paces frames and the game kept running at 330-1000 fps (Achilles run 2026-11-20).
+        /// Measures the frame rate over the next second and reports it.
+        /// </summary>
+        private IEnumerator FrameRate(Step step, Outcome outcome)
+        {
+            _frameCap = int.Parse(step.Args[0], CultureInfo.InvariantCulture);
+            if (!_limiterRunning)
+            {
+                _limiterRunning = true;
+                GameManager.local.StartCoroutine(Limit());
+            }
+            yield return new WaitForSecondsRealtime(0.2f);
+            var frames = Time.frameCount;
+            var start = Time.realtimeSinceStartup;
+            yield return new WaitForSecondsRealtime(1f);
+            var measured = (Time.frameCount - frames) / (Time.realtimeSinceStartup - start);
+            outcome.Detail = "frame rate capped at " + _frameCap.ToString("0", CultureInfo.InvariantCulture) + " fps; measured "
+                + measured.ToString("0", CultureInfo.InvariantCulture) + " fps over 1 s";
+            if (measured > _frameCap * 1.15f)
+            {
+                outcome.Fail(outcome.Detail + " (the cap does not hold)");
+            }
+        }
+
+        private static IEnumerator Limit()
+        {
+            var watch = System.Diagnostics.Stopwatch.StartNew();
+            var last = watch.Elapsed.TotalSeconds;
+            var end = new WaitForEndOfFrame();
+            while (true)
+            {
+                yield return end;
+                if (_frameCap <= 0f)
+                {
+                    last = watch.Elapsed.TotalSeconds;
+                    continue;
+                }
+                var next = last + (1.0 / _frameCap);
+                while (watch.Elapsed.TotalSeconds < next - 0.0015)
+                {
+                    System.Threading.Thread.Sleep(1);
+                }
+                while (watch.Elapsed.TotalSeconds < next)
+                {
+                }
+                // Catch up without bursting when a frame took longer than its slot.
+                last = Math.Max(next, watch.Elapsed.TotalSeconds - (1.0 / _frameCap));
+            }
         }
 
         private Recorder _recorder;
