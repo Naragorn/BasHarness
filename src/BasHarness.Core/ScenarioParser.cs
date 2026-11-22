@@ -114,6 +114,19 @@ namespace BasHarness.Core
                 Validate = (a, n) => TryParseNumber(a[0], out _) ? null : "'" + a[0] + "' is not a number of degrees",
             },
             ["player-grab"] = new Spec(1, 1, false, "hand") { Validate = (a, n) => OneOf(n, "hand", new[] { "left", "right" }) },
+            ["player-grab-npc"] = new Spec(1, 1, false, "section", "hand")
+            {
+                Validate = (a, n) => OneOf(n, "hand", new[] { "left", "right" }) ?? OneOf(n, "section", PartSections),
+            },
+            ["player-slam"] = new Spec(1, 1, false, "speed", "hold", "back", "hand")
+            {
+                Validate = (a, n) => SlamMove(a[0]) ?? PositiveKey(n, "speed") ?? SecondsKey(n, "hold")
+                    ?? OneOf(n, "back", new[] { "true", "false" }) ?? OneOf(n, "hand", new[] { "left", "right" }),
+            },
+            ["place-block"] = new Spec(1, 1, false, "size")
+            {
+                Validate = (a, n) => (TryParseVector(a[0], out _, out _, out _) ? null : "'" + a[0] + "' is not three numbers right,up,forward") ?? PositiveKey(n, "size"),
+            },
             ["player-parry"] = new Spec(0, 0, false, "offset", "swing") { Validate = (a, n) => NumberKey(n, "offset") ?? NumberKey(n, "swing") },
             ["player-strike-weapon"] = new Spec(0, 0, false, "twist", "seconds", "approach", "settle", "depth", "phase")
             {
@@ -143,6 +156,11 @@ namespace BasHarness.Core
             ["player-invincible"] = new Spec(1, 1, false)
             {
                 Validate = (a, n) => a[0] == "true" || a[0] == "false" ? null : "'" + a[0] + "' is not one of true, false",
+            },
+            ["player-cast"] = new Spec(1, 1, false, "speed", "hand")
+            {
+                Validate = (a, n) => (a[0] == "Fire" || a[0] == "Lightning" || a[0] == "Gravity" ? null : "'" + a[0] + "' is not one of Fire, Lightning, Gravity")
+                    ?? NumberKey(n, "speed") ?? OneOf(n, "hand", new[] { "left", "right" }),
             },
             ["player-skill"] = new Spec(2, 2, false)
             {
@@ -294,6 +312,23 @@ namespace BasHarness.Core
             x = y = z = 0f;
             var parts = (text ?? string.Empty).Split(',');
             return parts.Length == 3 && TryParseNumber(parts[0], out x) && TryParseNumber(parts[1], out y) && TryParseNumber(parts[2], out z);
+        }
+
+        /// <summary>player-slam's move: three numbers right,up,forward with a length above 0.</summary>
+        private static string SlamMove(string text)
+        {
+            if (!TryParseVector(text, out var x, out var y, out var z))
+            {
+                return "'" + text + "' is not three numbers right,up,forward";
+            }
+            return (x * x) + (y * y) + (z * z) < 1e-6f ? "the move is 0 m long" : null;
+        }
+
+        private static string PositiveKey(IReadOnlyDictionary<string, string> named, string key)
+        {
+            return named.TryGetValue(key, out var text) && (!TryParseNumber(text, out var value) || value <= 0f)
+                ? key + ": '" + text + "' is not a number above 0"
+                : null;
         }
 
         private static string VectorKey(IReadOnlyDictionary<string, string> named, string key)

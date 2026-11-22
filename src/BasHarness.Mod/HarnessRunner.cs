@@ -7,13 +7,14 @@ using System.Linq;
 using System.Reflection;
 using BasHarness.Core;
 using ThunderRoad;
+using ThunderRoad.Skill.Spell;
 using UnityEngine;
 using OptionValue = BasHarness.Core.OptionValue;
 
 namespace BasHarness
 {
     /// <summary>Runs a scenario inside the game, one step after the other, and reports each step to the log.</summary>
-    internal sealed class HarnessRunner
+    internal sealed partial class HarnessRunner
     {
         private const float ExpectLogTimeout = 10f;
         private const float DefaultLevelTimeout = 180f;
@@ -179,6 +180,9 @@ namespace BasHarness
                     Player.invincibility = step.Args[0] == "true";
                     outcome.Detail = "Player.invincibility = " + Player.invincibility;
                     return Nothing();
+                case "player-cast":
+                    PlayerCast(step, outcome);
+                    return Nothing();
                 case "player-skill":
                     PlayerSkill(step, outcome);
                     return Nothing();
@@ -204,6 +208,13 @@ namespace BasHarness
                     return PlayerStrikeWeapon(step, outcome);
                 case "player-release":
                     PlayerRelease(step, outcome);
+                    return Nothing();
+                case "player-grab-npc":
+                    return PlayerGrabNpc(step, outcome);
+                case "player-slam":
+                    return PlayerSlam(step, outcome);
+                case "place-block":
+                    PlaceBlock(step, outcome);
                     return Nothing();
                 case "record-start":
                     RecordStart(step, outcome);
@@ -548,6 +559,62 @@ namespace BasHarness
         }
 
         /// <summary>
+        /// Casts a spell from the player's hand (right by default) at the spawned NPC through the game's own spell code:
+        /// the spell is loaded on the hand's SpellCaster (SpellCaster.LoadSpell, so Mana raises OnSpellLoadEvent as for a
+        /// real cast), then Fire throws a fireball (SpellCastProjectile.ThrowProjectile, unguided, speed m/s, default 15),
+        /// Lightning strikes the NPC's chest with one bolt (SpellCastLightning.Hit plus PlayBolt for the look; a real spray
+        /// needs an aimed controller), Gravity pushes towards it at full charge (SpellCastGravity.Throw, speed default 8).
+        /// </summary>
+        private void PlayerCast(Step step, Outcome outcome)
+        {
+            var player = Player.currentCreature;
+            if (player == null || _npc == null || _npc.ragdoll == null)
+            {
+                outcome.Fail(player == null ? "no player (wait-level first)" : "no NPC (spawn-npc first)");
+                return;
+            }
+            var hand = step.Named.TryGetValue("hand", out var side) && side == "left" ? player.handLeft : player.handRight;
+            var caster = hand?.caster;
+            if (caster == null)
+            {
+                outcome.Fail("the player's hand has no spell caster");
+                return;
+            }
+            if (!Catalog.TryGetData<SpellCastData>(step.Args[0], out var data, false) || data == null)
+            {
+                outcome.Fail("spell '" + step.Args[0] + "' is not in the catalog");
+                return;
+            }
+            caster.LoadSpell(data);
+            var target = _npc.ragdoll.targetPart.transform.position;
+            var from = caster.Orb != null ? caster.Orb.position : hand.transform.position;
+            var dir = (target - from).normalized;
+            switch (caster.spellInstance)
+            {
+                case SpellCastProjectile fire:
+                    var speed = Number(step, "speed", 15f);
+                    fire.ThrowProjectile(from + (dir * 0.3f), Quaternion.LookRotation(dir), dir * speed);
+                    outcome.Detail = "fireball thrown at " + speed.ToString("0.#", CultureInfo.InvariantCulture) + " m/s from "
+                        + Vector3.Distance(from, target).ToString("0.00", CultureInfo.InvariantCulture) + " m";
+                    return;
+                case SpellCastLightning bolt:
+                    bolt.Hit(_npc.ragdoll.targetPart.colliderGroup, target, -dir, dir * 10f, 1f, false);
+                    bolt.PlayBolt(from, target);
+                    outcome.Detail = "a bolt hit " + _npc.name + "'s " + _npc.ragdoll.targetPart.type;
+                    return;
+                case SpellCastGravity gravity:
+                    var push = Number(step, "speed", 8f);
+                    gravity.currentCharge = 1f;
+                    gravity.Throw(dir * push);
+                    outcome.Detail = "gravity push towards " + _npc.name + " at full charge";
+                    return;
+                default:
+                    outcome.Fail("spell '" + step.Args[0] + "' loaded as " + (caster.spellInstance?.GetType().Name ?? "nothing") + ", which player-cast cannot cast");
+                    return;
+            }
+        }
+
+        /// <summary>
         /// Gives the player a skill or takes it away, the way buying and refunding at the skill tree does: through the
         /// player creature's container (Creature.TryAddSkill / TryRemoveSkill), whose change the game's Mana answers
         /// with Creature.ForceLoadSkill / ForceUnloadSkill (SkillData.OnSkillLoadedEvent / OnSkillUnloadedEvent).
@@ -641,6 +708,18 @@ namespace BasHarness
         private const float DefaultSwing = 3f;
         private const float SwingSeconds = 0.12f;
 
+        /// <summary>Where a hit-npc lands: the part's position, moved by at= metres along the NPC's own right, up and forward.</summary>
+        private Vector3 ContactOn(RagdollPart part, Step step)
+        {
+            var contact = part.transform.position;
+            if (step.Named.TryGetValue("at", out var atText) && ScenarioParser.TryParseVector(atText, out var atRight, out var atUp, out var atForward))
+            {
+                var body = _npc.transform;
+                contact += (body.right * atRight) + (body.up * atUp) + (body.forward * atForward);
+            }
+            return contact;
+        }
+
         private IEnumerator HitNpc(Step step, Outcome outcome)
         {
             var allowDead = step.Named.TryGetValue("dead", out var deadText) && deadText.Equals("true", StringComparison.OrdinalIgnoreCase);
@@ -665,13 +744,7 @@ namespace BasHarness
                 outcome.Fail("the NPC has no " + type + (section != RagdollPart.Section.Full ? " (" + section + ")" : string.Empty));
                 yield break;
             }
-            // Where the hit lands: the part's position, moved by at= metres along the NPC's own right, up and forward.
-            var contact = part.transform.position;
-            if (step.Named.TryGetValue("at", out var atText) && ScenarioParser.TryParseVector(atText, out var atRight, out var atUp, out var atForward))
-            {
-                var body = _npc.transform;
-                contact += (body.right * atRight) + (body.up * atUp) + (body.forward * atForward);
-            }
+            var contact = ContactOn(part, step);
             var hand = Player.local?.creature?.handRight;
             if (hand == null)
             {
@@ -773,6 +846,15 @@ namespace BasHarness
                     yield return null;
                 }
             }
+            if (swing > 0f)
+            {
+                // The NPC may have moved during the swing (getting up, walking): aim at where the part is now.
+                contact = ContactOn(part, step);
+                direction = (contact - from).normalized;
+                hit.contactPoint = contact;
+                hit.contactNormal = -direction;
+                hit.impactVelocity = direction * velocity;
+            }
             var before = _npc.currentHealth;
             _npc.Damage(hit);
             if (swing > 0f && playerHand != null)
@@ -837,6 +919,8 @@ namespace BasHarness
                     return (Holds(npc.handLeft) || Holds(npc.handRight)) ? "True" : "False";
                 case "brain":
                     return npc.brain?.instance?.id ?? "none";
+                case "tree":
+                    return npc.brain?.instance != null && npc.brain.instance.updateTree ? "True" : "False";
                 default:
                     var staggered = (npc.brain != null && npc.brain.currentStagger != Brain.Stagger.None) || npc.state == Creature.State.Destabilized;
                     return staggered ? "True" : "False";
@@ -1189,14 +1273,20 @@ namespace BasHarness
             var player = Player.local != null ? Player.local.creature : null;
             var side = step.Named.TryGetValue("hand", out var handText) && handText.Equals("left", StringComparison.OrdinalIgnoreCase) ? Side.Left : Side.Right;
             var hand = player != null ? player.GetHand(side) : null;
-            if (hand == null || !Holds(hand))
+            if (hand == null || hand.grabbedHandle == null)
             {
                 outcome.Fail("the player's " + side + " hand holds nothing");
                 return;
             }
             var item = hand.grabbedHandle.item;
+            var npcPart = hand.grabbedHandle is HandleRagdoll ragdollHandle ? ragdollHandle.ragdollPart : null;
             hand.TryRelease();
-            outcome.Detail = "player's " + side + " hand let go of '" + (item != null && item.data != null ? item.data.id : "?") + "'";
+            if (npcPart != null)
+            {
+                // player-grab-npc parked the controller on the NPC; it follows the mock headset again.
+                (side == Side.Left ? Player.local.handLeft : Player.local.handRight).SetTracking(true);
+            }
+            outcome.Detail = "player's " + side + " hand let go of " + (npcPart != null ? "the NPC's " + npcPart.type : "'" + (item != null && item.data != null ? item.data.id : "?") + "'");
         }
 
         private IEnumerator PlayerGrab(Step step, Outcome outcome)

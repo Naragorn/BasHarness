@@ -89,6 +89,51 @@ public class CombatStepParserTests
         Assert.Equal("left", s.Steps[4].Named["hand"]);
     }
 
+    [Fact]
+    public void PlayerGrabNpc_AndPlayerSlam_Parse()
+    {
+        var s = ScenarioParser.Parse("wait-level\nplayer-grab-npc RightHand\nplayer-grab-npc LeftArm section=Lower hand=left\nplayer-slam 0,-1.2,0.2 speed=6 hold=0.5 back=false\nplayer-slam 0,-1,0");
+
+        Assert.Empty(s.Errors);
+        Assert.Equal(new[] { "wait-level", "player-grab-npc", "player-grab-npc", "player-slam", "player-slam" }, s.Steps.Select(x => x.Verb));
+        Assert.Equal("left", s.Steps[2].Named["hand"]);
+        Assert.Equal("Lower", s.Steps[2].Named["section"]);
+        Assert.Equal("0,-1.2,0.2", s.Steps[3].Args[0]);
+        Assert.Equal("6", s.Steps[3].Named["speed"]);
+    }
+
+    [Fact]
+    public void PlaceBlock_Parses()
+    {
+        var s = ScenarioParser.Parse("wait-level\nplace-block 0,-0.35,0\nplace-block 0.1,-0.4,0.05 size=0.5");
+
+        Assert.Empty(s.Errors);
+        Assert.Equal("0.5", s.Steps[2].Named["size"]);
+    }
+
+    [Theory]
+    [InlineData("player-grab-npc", "expects 1")]
+    [InlineData("player-grab-npc RightHand hand=both", "hand: 'both' is not one of left, right")]
+    [InlineData("player-grab-npc RightHand section=Hips", "section: 'Hips' is not one of Full, Lower, Mid, Upper")]
+    [InlineData("place-block", "expects 1")]
+    [InlineData("place-block below", "'below' is not three numbers right,up,forward")]
+    [InlineData("place-block 0,-0.3,0 size=0", "size: '0' is not a number above 0")]
+    [InlineData("place-block 0,-0.3,0 size=big", "size: 'big' is not a number above 0")]
+    [InlineData("player-slam", "expects 1")]
+    [InlineData("player-slam down", "'down' is not three numbers right,up,forward")]
+    [InlineData("player-slam 0,0,0", "the move is 0 m long")]
+    [InlineData("player-slam 0,-1,0 speed=fast", "speed: 'fast' is not a number above 0")]
+    [InlineData("player-slam 0,-1,0 speed=0", "speed: '0' is not a number above 0")]
+    [InlineData("player-slam 0,-1,0 back=maybe", "back: 'maybe' is not one of true, false")]
+    [InlineData("player-slam 0,-1,0 hold=-1", "hold: '-1' is not a number of seconds >= 0")]
+    public void GrabAndSlamErrors_NameTheProblem(string line, string expected)
+    {
+        var s = ScenarioParser.Parse("wait-level\n" + line);
+
+        var error = Assert.Single(s.Errors);
+        Assert.Contains(expected, error);
+    }
+
     [Theory]
     [InlineData("npc-attack", "expects 1")]
     [InlineData("npc-attack Swing", "'Swing' is not one of WindUp, Attack, FollowThrough, End, Cancel")]
@@ -137,6 +182,10 @@ public class CombatStepParserTests
     [InlineData("turn-player", "expects 1")]
     [InlineData("player-invincible", "expects 1")]
     [InlineData("player-invincible yes", "'yes' is not one of true, false")]
+    [InlineData("player-cast", "expects 1")]
+    [InlineData("player-cast Ice", "'Ice' is not one of Fire, Lightning, Gravity")]
+    [InlineData("player-cast Fire speed=fast", "speed: 'fast' is not a number")]
+    [InlineData("player-cast Fire hand=both", "hand: 'both' is not one of left, right")]
     [InlineData("player-skill MightyKick", "expects 2")]
     [InlineData("player-skill MightyKick bought", "'bought' is not one of true, false")]
     [InlineData("turn-player left", "'left' is not a number")]
@@ -157,6 +206,17 @@ public class CombatStepParserTests
         var error = Assert.Single(s.Errors);
         Assert.StartsWith("line 2:", error);
         Assert.Contains(expected, error);
+    }
+
+    [Fact]
+    public void PlayerCast_TakesAnElement_AndOptionalSpeedAndHand()
+    {
+        var s = ScenarioParser.Parse("wait-level\nplayer-cast Fire speed=12\nplayer-cast Lightning hand=left\nplayer-cast Gravity");
+
+        Assert.Empty(s.Errors);
+        Assert.Equal(new[] { "Fire", "Lightning", "Gravity" }, s.Steps.Skip(1).Select(x => x.Args[0]));
+        Assert.Equal("12", s.Steps[1].Named["speed"]);
+        Assert.Equal("left", s.Steps[2].Named["hand"]);
     }
 
     [Fact]
@@ -195,6 +255,25 @@ public class CombatMathTests
         Assert.Equal(ez, z, 3);
     }
 
+    [Theory]
+    [InlineData(1.2f, 6f, 0f, 0f)]       // start
+    [InlineData(1.2f, 6f, 0.1f, 0.5f)]   // halfway after 0.1 s at 6 m/s
+    [InlineData(1.2f, 6f, 0.2f, 1f)]     // there
+    [InlineData(1.2f, 6f, 0.5f, 1f)]     // stays there
+    [InlineData(1.2f, 6f, -1f, 0f)]      // clock before the start
+    [InlineData(0f, 6f, 0.1f, 1f)]       // no way to go
+    public void MoveShare_IsTheShareOfTheWayCoveredAtThatSpeed(float metres, float speed, float elapsed, float expected)
+    {
+        Assert.Equal(expected, CombatMath.MoveShare(metres, speed, elapsed), 3);
+    }
+
+    [Fact]
+    public void MoveSeconds_IsTheWayOverTheSpeed()
+    {
+        Assert.Equal(0.2f, CombatMath.MoveSeconds(1.2f, 6f), 3);
+        Assert.Equal(0f, CombatMath.MoveSeconds(0f, 6f), 3);
+    }
+
     [Fact]
     public void OffsetXZ_NormalisesTheForwardDirection()
     {
@@ -229,6 +308,8 @@ public class CombatMathTests
     [InlineData("staggered", "false", "True", false)]
     [InlineData("stagger", "full", "Full", true)]
     [InlineData("state", "Destabilized", "Alive", false)]
+    [InlineData("tree", "false", "False", true)]
+    [InlineData("tree", "False", "True", false)]
     public void NpcProperty_MatchesCaseInsensitively(string property, string expected, string actual, bool ok)
     {
         Assert.True(NpcProperty.IsKnown(property));
