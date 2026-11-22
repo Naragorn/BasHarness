@@ -181,8 +181,7 @@ namespace BasHarness
                     outcome.Detail = "Player.invincibility = " + Player.invincibility;
                     return Nothing();
                 case "player-cast":
-                    PlayerCast(step, outcome);
-                    return Nothing();
+                    return PlayerCast(step, outcome);
                 case "player-skill":
                     PlayerSkill(step, outcome);
                     return Nothing();
@@ -565,52 +564,77 @@ namespace BasHarness
         /// Lightning strikes the NPC's chest with one bolt (SpellCastLightning.Hit plus PlayBolt for the look; a real spray
         /// needs an aimed controller), Gravity pushes towards it at full charge (SpellCastGravity.Throw, speed default 8).
         /// </summary>
-        private void PlayerCast(Step step, Outcome outcome)
+        private IEnumerator PlayerCast(Step step, Outcome outcome)
         {
             var player = Player.currentCreature;
             if (player == null || _npc == null || _npc.ragdoll == null)
             {
                 outcome.Fail(player == null ? "no player (wait-level first)" : "no NPC (spawn-npc first)");
-                return;
+                yield break;
             }
             var hand = step.Named.TryGetValue("hand", out var side) && side == "left" ? player.handLeft : player.handRight;
             var caster = hand?.caster;
             if (caster == null)
             {
                 outcome.Fail("the player's hand has no spell caster");
-                return;
+                yield break;
             }
             if (!Catalog.TryGetData<SpellCastData>(step.Args[0], out var data, false) || data == null)
             {
                 outcome.Fail("spell '" + step.Args[0] + "' is not in the catalog");
-                return;
+                yield break;
             }
             caster.LoadSpell(data);
+            // Let the spell settle on the hand for a few frames: right after LoadSpell the caster's Orb (where the gravity
+            // push starts) can still sit metres away (seen: 5.84 m from the NPC with the NPC 2 m from the player).
+            for (var f = 0; f < 5; f++)
+            {
+                yield return null;
+            }
             var target = _npc.ragdoll.targetPart.transform.position;
-            var from = caster.Orb != null ? caster.Orb.position : hand.transform.position;
+            // From the hand, not the caster's Orb: right after LoadSpell the Orb can still sit metres away (seen: 5.84 m).
+            var from = hand.transform.position;
             var dir = (target - from).normalized;
             switch (caster.spellInstance)
             {
                 case SpellCastProjectile fire:
                     var speed = Number(step, "speed", 15f);
-                    fire.ThrowProjectile(from + (dir * 0.3f), Quaternion.LookRotation(dir), dir * speed);
+                    // Launched 1.5 m in front of the NPC's chest, on the line from the hand: a projectile spawned inside or
+                    // right at the NPC's colliders starts overlapped and never reports the hit (seen at 0.24 m).
+                    var start = target - (dir * Mathf.Min(1.5f, Vector3.Distance(from, target)));
+                    fire.ThrowProjectile(start, Quaternion.LookRotation(dir), dir * speed);
                     outcome.Detail = "fireball thrown at " + speed.ToString("0.#", CultureInfo.InvariantCulture) + " m/s from "
-                        + Vector3.Distance(from, target).ToString("0.00", CultureInfo.InvariantCulture) + " m";
-                    return;
+                        + Vector3.Distance(start, target).ToString("0.00", CultureInfo.InvariantCulture) + " m before " + _npc.name + "'s chest";
+                    yield break;
                 case SpellCastLightning bolt:
                     bolt.Hit(_npc.ragdoll.targetPart.colliderGroup, target, -dir, dir * 10f, 1f, false);
                     bolt.PlayBolt(from, target);
                     outcome.Detail = "a bolt hit " + _npc.name + "'s " + _npc.ragdoll.targetPart.type;
-                    return;
+                    yield break;
                 case SpellCastGravity gravity:
                     var push = Number(step, "speed", 8f);
                     gravity.currentCharge = 1f;
+                    // The push's overlap sphere starts at the caster's Orb, which the mock headset leaves far from the hand
+                    // (seen: 14.53 m from the NPC). For the push only, the Orb goes 1.2 m in front of the NPC's chest on
+                    // the line from the hand, then back.
+                    var orb = caster.Orb;
+                    var wasAt = orb != null ? orb.position : Vector3.zero;
+                    var orbAway = orb != null ? Vector3.Distance(wasAt, target) : -1f;
+                    if (orb != null)
+                    {
+                        orb.position = target - (dir * 1.2f);
+                    }
                     gravity.Throw(dir * push);
-                    outcome.Detail = "gravity push towards " + _npc.name + " at full charge";
-                    return;
+                    if (orb != null)
+                    {
+                        orb.position = wasAt;
+                    }
+                    outcome.Detail = "gravity push towards " + _npc.name + " at full charge from 1.2 m before its chest (the orb was "
+                        + orbAway.ToString("0.00", CultureInfo.InvariantCulture) + " m away)";
+                    yield break;
                 default:
                     outcome.Fail("spell '" + step.Args[0] + "' loaded as " + (caster.spellInstance?.GetType().Name ?? "nothing") + ", which player-cast cannot cast");
-                    return;
+                    yield break;
             }
         }
 
