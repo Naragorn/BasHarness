@@ -57,6 +57,29 @@ public class CombatStepParserTests
     }
 
     [Fact]
+    public void HitNpc_TakesASectionAndAContactOffset()
+    {
+        var s = ScenarioParser.Parse("wait-level\nhit-npc Torso section=Lower at=0,-0.08,0.08\nhit-npc Neck at=0.01,0.05,0.05 section=Full");
+
+        Assert.Empty(s.Errors);
+        Assert.Equal("Lower", s.Steps[1].Named["section"]);
+        Assert.Equal("0,-0.08,0.08", s.Steps[1].Named["at"]);
+        Assert.True(ScenarioParser.TryParseVector(s.Steps[1].Named["at"], out var x, out var y, out var z));
+        Assert.Equal((0f, -0.08f, 0.08f), (x, y, z));
+    }
+
+    [Theory]
+    [InlineData("1,2")]
+    [InlineData("1,2,3,4")]
+    [InlineData("a,0,0")]
+    [InlineData("0,,0")]
+    [InlineData("")]
+    public void TryParseVector_RefusesAnythingButThreeNumbers(string text)
+    {
+        Assert.False(ScenarioParser.TryParseVector(text, out _, out _, out _));
+    }
+
+    [Fact]
     public void NpcAttack_AndPlayerGrabDropped_Parse()
     {
         var s = ScenarioParser.Parse("wait-level\nnpc-attack Attack\nnpc-attack end\nplayer-grab-dropped\nplayer-grab-dropped hand=left");
@@ -85,6 +108,8 @@ public class CombatStepParserTests
     [InlineData("expect-player-speed x", "is not a number")]
     [InlineData("expect-player-speed 3 2", "max 2 is below min 3")]
     [InlineData("hit-npc Torso swing=fast", "swing: 'fast' is not a number")]
+    [InlineData("hit-npc Torso at=0,1", "at: '0,1' is not three numbers right,up,forward")]
+    [InlineData("hit-npc Torso section=Hips", "section: 'Hips' is not one of Full, Lower, Mid, Upper")]
     [InlineData("player-grab", "expects 1")]
     [InlineData("player-grab SwordShortCommon hand=both", "hand: 'both' is not one of left, right")]
     [InlineData("player-parry now", "expects 0")]

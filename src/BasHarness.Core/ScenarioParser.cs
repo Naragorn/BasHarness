@@ -149,10 +149,10 @@ namespace BasHarness.Core
                 Validate = (a, n) => a[1] == "true" || a[1] == "false" ? null : "'" + a[1] + "' is not one of true, false",
             },
             ["expect-player-speed"] = new Spec(1, 2, false) { Validate = (a, n) => SpeedRange(a) },
-            ["hit-npc"] = new Spec(1, 1, false, "velocity", "damage", "push", "type", "by", "item", "dead", "swing")
+            ["hit-npc"] = new Spec(1, 1, false, "velocity", "damage", "push", "type", "by", "item", "dead", "swing", "section", "at")
             {
                 Validate = (a, n) => NumberKey(n, "velocity") ?? NumberKey(n, "damage") ?? NumberKey(n, "swing") ?? WholeKey(n, "push") ?? OneOf(n, "by", HitBy.Names)
-                    ?? OneOf(n, "dead", new[] { "true", "false" }),
+                    ?? OneOf(n, "dead", new[] { "true", "false" }) ?? OneOf(n, "section", PartSections) ?? VectorKey(n, "at"),
             },
             ["expect-npc"] = new Spec(2, 2, false, "within")
             {
@@ -283,6 +283,24 @@ namespace BasHarness.Core
         {
             return float.TryParse(text, NumberStyles.Float, CultureInfo.InvariantCulture, out value)
                 && !float.IsNaN(value) && !float.IsInfinity(value);
+        }
+
+        /// <summary>The game's RagdollPart.Section names (hit-npc section=).</summary>
+        private static readonly string[] PartSections = { "Full", "Lower", "Mid", "Upper" };
+
+        /// <summary>Three numbers "x,y,z" (hit-npc at=: metres to the NPC's right, up and forward).</summary>
+        public static bool TryParseVector(string text, out float x, out float y, out float z)
+        {
+            x = y = z = 0f;
+            var parts = (text ?? string.Empty).Split(',');
+            return parts.Length == 3 && TryParseNumber(parts[0], out x) && TryParseNumber(parts[1], out y) && TryParseNumber(parts[2], out z);
+        }
+
+        private static string VectorKey(IReadOnlyDictionary<string, string> named, string key)
+        {
+            return named.TryGetValue(key, out var text) && !TryParseVector(text, out _, out _, out _)
+                ? key + ": '" + text + "' is not three numbers right,up,forward"
+                : null;
         }
 
         private static string NumberKey(IReadOnlyDictionary<string, string> named, string key)

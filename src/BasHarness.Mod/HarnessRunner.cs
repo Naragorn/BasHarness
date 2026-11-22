@@ -654,11 +654,23 @@ namespace BasHarness
                 outcome.Fail("'" + step.Args[0] + "' is not a body part (" + string.Join(", ", Enum.GetNames(typeof(RagdollPart.Type))) + ")");
                 yield break;
             }
-            var part = _npc.ragdoll.GetPart(type);
+            var section = RagdollPart.Section.Full;
+            if (step.Named.TryGetValue("section", out var sectionText))
+            {
+                Enum.TryParse(sectionText, true, out section);
+            }
+            var part = _npc.ragdoll.GetPart(type, section);
             if (part == null)
             {
-                outcome.Fail("the NPC has no " + type);
+                outcome.Fail("the NPC has no " + type + (section != RagdollPart.Section.Full ? " (" + section + ")" : string.Empty));
                 yield break;
+            }
+            // Where the hit lands: the part's position, moved by at= metres along the NPC's own right, up and forward.
+            var contact = part.transform.position;
+            if (step.Named.TryGetValue("at", out var atText) && ScenarioParser.TryParseVector(atText, out var atRight, out var atUp, out var atForward))
+            {
+                var body = _npc.transform;
+                contact += (body.right * atRight) + (body.up * atUp) + (body.forward * atForward);
             }
             var hand = Player.local?.creature?.handRight;
             if (hand == null)
@@ -725,7 +737,7 @@ namespace BasHarness
                 yield break;
             }
             var from = foot != null ? foot.transform.position : hand.transform.position;
-            var direction = (part.transform.position - from).normalized;
+            var direction = (contact - from).normalized;
             var damager = item != null
                 ? item.mainCollisionHandler?.damagers?.FirstOrDefault()
                 : foot != null ? foot.collisionHandler?.damagers?.FirstOrDefault() : (by == "spell" ? null : hand.bodyDamager);
@@ -742,7 +754,7 @@ namespace BasHarness
                 sourceColliderGroup = sourceGroup,
                 targetColliderGroup = part.colliderGroup,
                 impactVelocity = direction * velocity,
-                contactPoint = part.transform.position,
+                contactPoint = contact,
                 contactNormal = -direction,
                 casterHand = by == "spell" ? hand.caster : null,
             };
