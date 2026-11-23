@@ -152,8 +152,15 @@ namespace BasHarness
             var handStart = HeldY(ragdollHand);
             var heldFrom = HeldAt(ragdollHand);
             var way = metres > 0f ? move / metres : Vector3.zero;
+            Debug.Log("[BasHarness] player-slam grip before the move: " + GripReport(ragdollHand));
+            var contacts = new System.Text.StringBuilder();
+            var logs = WatchContacts(ragdollHand.grabbedHandle, contacts);
             controller.SetTracking(false);
             var start = Time.realtimeSinceStartup;
+            foreach (var l in logs)
+            {
+                l.Start = start;
+            }
             float elapsed;
             var trace = new System.Text.StringBuilder();
             do
@@ -175,7 +182,13 @@ namespace BasHarness
                 lowest = Mathf.Min(lowest, HeldY(ragdollHand));
                 Trace(trace, Time.realtimeSinceStartup - start, controller, ragdollHand, heldFrom, way);
             }
-            Debug.Log("[BasHarness] player-slam (s: controller / player hand / held body, m above the feet / held body along the move, m / grip to shoulders, m):" + trace);
+            Debug.Log("[BasHarness] player-slam (s: controller / player hand / held body, m above the feet / held body along the move, m / its speed along the move, m/s / grip to shoulders, m):" + trace);
+            Debug.Log("[BasHarness] player-slam grip after the hold: " + GripReport(ragdollHand));
+            foreach (var l in logs)
+            {
+                UnityEngine.Object.Destroy(l);
+            }
+            Debug.Log("[BasHarness] player-slam contacts (s: own collider (body) -> other collider (its body, layer) at relative speed), before any game filter:" + (contacts.Length > 0 ? contacts.ToString() : " none"));
             var held = ragdollHand.grabbedHandle != null ? ragdollHand.grabbedHandle.name : "nothing";
             if (back)
             {
@@ -443,7 +456,105 @@ namespace BasHarness
             trace.Append(' ').Append(t.ToString("0.00", CultureInfo.InvariantCulture)).Append(": ").Append(Height(controller.transform.position))
                 .Append(" / ").Append(Height(hand.transform.position)).Append(" / ").Append(Height(new Vector3(0f, HeldY(hand), 0f)))
                 .Append(" / ").Append(Vector3.Dot(HeldAt(hand) - heldFrom, way).ToString("0.00", CultureInfo.InvariantCulture))
+                .Append(" / ").Append(HeldSpeed(hand, way))
                 .Append(" / ").Append(Reach(hand)).Append(';');
+        }
+
+        /// <summary>
+        /// Puts a <see cref="ContactLog"/> on the bodies a slam of a held NPC arm can hit with: the NPC's hand, its forearm
+        /// and what that hand holds. Nothing for other holds.
+        /// </summary>
+        private static System.Collections.Generic.List<ContactLog> WatchContacts(Handle held, System.Text.StringBuilder lines)
+        {
+            var logs = new System.Collections.Generic.List<ContactLog>();
+            var npcHand = held != null ? NpcHandHeld(held) : null;
+            if (npcHand == null)
+            {
+                return logs;
+            }
+            var bodies = new System.Collections.Generic.List<GameObject> { npcHand.physicBody.gameObject };
+            if (npcHand.lowerArmPart != null)
+            {
+                bodies.Add(npcHand.lowerArmPart.physicBody.gameObject);
+            }
+            var item = npcHand.grabbedHandle != null ? npcHand.grabbedHandle.item : null;
+            if (item != null)
+            {
+                bodies.Add(item.physicBody.gameObject);
+            }
+            foreach (var b in bodies)
+            {
+                var log = b.AddComponent<ContactLog>();
+                log.Lines = lines;
+                logs.Add(log);
+            }
+            var data = held is HandleRagdoll hr ? hr.handleRagdollData : null;
+            Debug.Log("[BasHarness] player-slam NPC hand colliders: " + Enabled(npcHand.colliderGroup) + ", collision events " + Events(npcHand.collisionHandler)
+                + "; forearm: " + (npcHand.lowerArmPart != null ? Enabled(npcHand.lowerArmPart.colliderGroup) + ", collision events " + Events(npcHand.lowerArmPart.collisionHandler) : "-")
+                + "; ragdoll state " + npcHand.ragdoll.state + ", collisionMinVelocity " + npcHand.ragdoll.collisionMinVelocity.ToString("0.0", CultureInfo.InvariantCulture)
+                + "; the held handle turns collision events on for: " + (data != null && data.activateCollisionOnParts != null && data.activateCollisionOnParts.Count > 0 ? string.Join(", ", data.activateCollisionOnParts) : "nothing")
+                + (data != null ? " (handle data '" + data.id + "')" : ""));
+            return logs;
+        }
+
+        /// <summary>Whether a CollisionHandler raises the game's collision events (its <c>active</c> flag).</summary>
+        private static string Events(CollisionHandler handler)
+        {
+            return handler == null ? "no handler" : handler.active ? "on" : "off";
+        }
+
+        private static string Enabled(ColliderGroup group)
+        {
+            if (group == null)
+            {
+                return "no group";
+            }
+            var on = 0;
+            foreach (var c in group.colliders)
+            {
+                if (c != null && c.enabled)
+                {
+                    on++;
+                }
+            }
+            return on + " of " + group.colliders.Count + " enabled";
+        }
+
+        /// <summary>Speed of the held physics body along the move (m/s), "-" when the hand holds nothing.</summary>
+        private static string HeldSpeed(RagdollHand hand, Vector3 way)
+        {
+            var body = hand.grabbedHandle != null ? hand.grabbedHandle.physicBody : null;
+            return body != null ? Vector3.Dot(body.velocity, way).ToString("0.00", CultureInfo.InvariantCulture) : "-";
+        }
+
+        /// <summary>
+        /// How the game ties the held body to the controller (Handle.OnGrab, SetJointConfig): grip type, whether the player
+        /// counts as grounded (on the ground the hand joint pulls; off it the player joint, climbing forces), both joints'
+        /// position drives and the force they pull with now, and the held body's mass.
+        /// </summary>
+        private static string GripReport(RagdollHand hand)
+        {
+            var handle = hand.grabbedHandle;
+            var grip = hand.gripInfo;
+            if (handle == null || grip == null)
+            {
+                return "the hand holds nothing";
+            }
+            var body = handle.physicBody;
+            return "type " + grip.type + ", player grounded " + Player.local.locomotion.isGrounded + ", player joint active " + handle.playerJointActive
+                + "; hand joint " + Drive(grip.joint) + "; player joint " + Drive(grip.playerJoint)
+                + "; held body " + (body != null ? body.mass.ToString("0.0", CultureInfo.InvariantCulture) + " kg, kinematic " + body.isKinematic : "-");
+        }
+
+        private static string Drive(ConfigurableJoint joint)
+        {
+            if (joint == null)
+            {
+                return "none";
+            }
+            var d = joint.xDrive;
+            return "spring " + d.positionSpring.ToString("0", CultureInfo.InvariantCulture) + " damper " + d.positionDamper.ToString("0", CultureInfo.InvariantCulture)
+                + " max " + d.maximumForce.ToString("0", CultureInfo.InvariantCulture) + " N, pulls " + joint.currentForce.magnitude.ToString("0", CultureInfo.InvariantCulture) + " N";
         }
 
         /// <summary>
