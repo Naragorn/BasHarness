@@ -215,6 +215,8 @@ namespace BasHarness
                     return PlayerGrabNpc(step, outcome);
                 case "player-slam":
                     return PlayerSlam(step, outcome);
+                case "player-eyes":
+                    return PlayerEyes(outcome);
                 case "place-block":
                     PlaceBlock(step, outcome);
                     return Nothing();

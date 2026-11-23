@@ -103,20 +103,32 @@ public class CombatStepParserTests
     }
 
     [Fact]
+    public void PlayerEyes_Parses()
+    {
+        var s = ScenarioParser.Parse("wait-level\nplayer-eyes");
+
+        Assert.Empty(s.Errors);
+        Assert.Equal("player-eyes", s.Steps[1].Verb);
+    }
+
+    [Fact]
     public void PlaceBlock_Parses()
     {
-        var s = ScenarioParser.Parse("wait-level\nplace-block 0,-0.35,0\nplace-block 0.1,-0.4,0.05 size=0.5");
+        var s = ScenarioParser.Parse("wait-level\nplace-block 0,-0.35,0\nplace-block 0.1,-0.4,0.05 size=0.5\nplace-block 0,-0.1,0 size=0.12 from=npc-hand\nplace-block 0,-0.4,0 from=held");
 
         Assert.Empty(s.Errors);
         Assert.Equal("0.5", s.Steps[2].Named["size"]);
+        Assert.Equal("npc-hand", s.Steps[3].Named["from"]);
     }
 
     [Theory]
     [InlineData("player-grab-npc", "expects 1")]
     [InlineData("player-grab-npc RightHand hand=both", "hand: 'both' is not one of left, right")]
     [InlineData("player-grab-npc RightHand section=Hips", "section: 'Hips' is not one of Full, Lower, Mid, Upper")]
+    [InlineData("player-eyes 1.6", "expects 0")]
     [InlineData("place-block", "expects 1")]
     [InlineData("place-block below", "'below' is not three numbers right,up,forward")]
+    [InlineData("place-block 0,-0.1,0 from=floor", "from: 'floor' is not one of held, npc-hand")]
     [InlineData("place-block 0,-0.3,0 size=0", "size: '0' is not a number above 0")]
     [InlineData("place-block 0,-0.3,0 size=big", "size: 'big' is not a number above 0")]
     [InlineData("player-slam", "expects 1")]

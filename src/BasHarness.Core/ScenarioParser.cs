@@ -123,9 +123,11 @@ namespace BasHarness.Core
                 Validate = (a, n) => SlamMove(a[0]) ?? PositiveKey(n, "speed") ?? SecondsKey(n, "hold")
                     ?? OneOf(n, "back", new[] { "true", "false" }) ?? OneOf(n, "hand", new[] { "left", "right" }),
             },
-            ["place-block"] = new Spec(1, 1, false, "size")
+            ["player-eyes"] = new Spec(0, 0, false),
+            ["place-block"] = new Spec(1, 1, false, "size", "from")
             {
-                Validate = (a, n) => (TryParseVector(a[0], out _, out _, out _) ? null : "'" + a[0] + "' is not three numbers right,up,forward") ?? PositiveKey(n, "size"),
+                Validate = (a, n) => (TryParseVector(a[0], out _, out _, out _) ? null : "'" + a[0] + "' is not three numbers right,up,forward") ?? PositiveKey(n, "size")
+                    ?? OneOf(n, "from", new[] { "held", "npc-hand" }),
             },
             ["player-parry"] = new Spec(0, 0, false, "offset", "swing") { Validate = (a, n) => NumberKey(n, "offset") ?? NumberKey(n, "swing") },
             ["player-strike-weapon"] = new Spec(0, 0, false, "twist", "seconds", "approach", "settle", "depth", "phase")
