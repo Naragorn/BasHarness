@@ -123,6 +123,11 @@ namespace BasHarness.Core
                 Validate = (a, n) => SlamMove(a[0]) ?? PositiveKey(n, "speed") ?? SecondsKey(n, "hold")
                     ?? OneOf(n, "back", new[] { "true", "false" }) ?? OneOf(n, "hand", new[] { "left", "right" }),
             },
+            ["player-stab"] = new Spec(1, 1, false, "section", "speed", "depth", "from", "step")
+            {
+                Validate = (a, n) => OneOf(n, "section", PartSections) ?? PositiveKey(n, "speed") ?? PositiveKey(n, "depth")
+                    ?? PositiveKey(n, "from") ?? OneOf(n, "step", new[] { "true", "false" }),
+            },
             ["player-eyes"] = new Spec(0, 0, false),
             ["place-block"] = new Spec(1, 1, false, "size", "from")
             {

@@ -215,6 +215,8 @@ namespace BasHarness
                     return PlayerGrabNpc(step, outcome);
                 case "player-slam":
                     return PlayerSlam(step, outcome);
+                case "player-stab":
+                    return PlayerStab(step, outcome);
                 case "player-eyes":
                     return PlayerEyes(outcome);
                 case "place-block":
@@ -1245,6 +1247,116 @@ namespace BasHarness
             outcome.Detail = "swept '" + s.Mine.data.id + "' " + (through - from).magnitude.ToString("0.00", CultureInfo.InvariantCulture) + " m through the NPC's '"
                 + s.Theirs.data.id + "' in " + seconds.ToString("0.00", CultureInfo.InvariantCulture) + " s, twisting "
                 + twist.ToString("0", CultureInfo.InvariantCulture) + "°/s around the blade";
+        }
+
+        /// <summary>
+        /// player-stab &lt;part&gt; [section=Full] [speed=2] [depth=0.15] [from=0.3] [step=true]: the player's right controller
+        /// turns the held blade so its tip points at that part of the spawned NPC from the player's chest, brings the tip
+        /// `from` m short of the part (0.6 s, then 0.6 s for the hand to catch up), then thrusts along the blade through the
+        /// part to `depth` m past it at `speed` m/s; holds 0.3 s, then back over 0.8 s. step=true first moves the player
+        /// (Player.Teleport) to 0.45 m beside the part, facing it, as a player walks up to an enemy on the ground. Real
+        /// physics: the game's own collision, penetration and hit events decide what the thrust does.
+        /// </summary>
+        private IEnumerator PlayerStab(Step step, Outcome outcome)
+        {
+            var player = Player.local;
+            var hand = player != null ? player.handRight : null;
+            var ragdollHand = player != null && player.creature != null ? player.creature.handRight : null;
+            var mine = ragdollHand != null ? ragdollHand.grabbedHandle?.item : null;
+            if (_npc == null || hand == null || mine == null)
+            {
+                outcome.Fail(_npc == null ? "no NPC (spawn-npc first)" : "the player holds nothing in the right hand");
+                yield break;
+            }
+            Enum.TryParse(step.Args[0], true, out RagdollPart.Type type);
+            var section = RagdollPart.Section.Full;
+            if (step.Named.TryGetValue("section", out var sectionText))
+            {
+                Enum.TryParse(sectionText, true, out section);
+            }
+            var part = _npc.ragdoll.GetPart(type, section);
+            if (part == null)
+            {
+                outcome.Fail("the NPC has no " + step.Args[0]);
+                yield break;
+            }
+            var speed = Number(step, "speed", 2f);
+            var depth = Number(step, "depth", 0.15f);
+            var from = Number(step, "from", 0.3f);
+            if (!step.Named.TryGetValue("step", out var stepText) || stepText != "false")
+            {
+                var toPart = part.transform.position - player.creature.transform.position;
+                toPart.y = 0f;
+                var facing = toPart.sqrMagnitude > 1e-4f ? toPart.normalized : player.creature.transform.forward;
+                var stand = part.transform.position - facing * 0.45f;
+                var shift = stand - player.creature.transform.position;
+                shift.y = 0f;
+                player.Teleport(player.transform.position + shift, Quaternion.LookRotation(facing, Vector3.up), keepVelocity: false, useHeadPosition: false);
+                yield return new WaitForSecondsRealtime(0.5f);
+            }
+            var restPosition = hand.transform.position;
+            var restRotation = hand.transform.rotation;
+            var grip = ragdollHand.grabbedHandle.transform.position;
+            var tip = BladeTip(mine, grip);
+            var target = part.transform.position;
+            var chest = player.creature.ragdoll.headPart.transform.position - Vector3.up * 0.35f;
+            var thrust = (target - chest).normalized;
+            var turn = Quaternion.FromToRotation((tip - grip).normalized, thrust);
+            var ready = target - thrust * from - turn * (tip - restPosition);
+            var readyRotation = turn * restRotation;
+            var startDistance = (tip - target).magnitude;
+            hand.SetTracking(false);
+            var begin = Time.realtimeSinceStartup;
+            while (Time.realtimeSinceStartup - begin < 0.6f)
+            {
+                var t = (Time.realtimeSinceStartup - begin) / 0.6f;
+                hand.transform.position = Vector3.Lerp(restPosition, ready, t);
+                hand.transform.rotation = Quaternion.Slerp(restRotation, readyRotation, t);
+                yield return null;
+            }
+            hand.transform.position = ready;
+            hand.transform.rotation = readyRotation;
+            yield return new WaitForSecondsRealtime(0.6f);
+            var readyTip = mine != null && ragdollHand.grabbedHandle != null ? BladeTip(mine, ragdollHand.grabbedHandle.transform.position) : tip;
+            var length = from + depth;
+            var through = ready + thrust * length;
+            var closest = float.MaxValue;
+            begin = Time.realtimeSinceStartup;
+            var seconds = length / speed;
+            while (Time.realtimeSinceStartup - begin < seconds)
+            {
+                hand.transform.position = Vector3.Lerp(ready, through, (Time.realtimeSinceStartup - begin) / seconds);
+                if (ragdollHand.grabbedHandle != null)
+                {
+                    closest = Mathf.Min(closest, (BladeTip(mine, ragdollHand.grabbedHandle.transform.position) - part.transform.position).magnitude);
+                }
+                yield return null;
+            }
+            hand.transform.position = through;
+            yield return new WaitForSecondsRealtime(0.3f);
+            begin = Time.realtimeSinceStartup;
+            while (Time.realtimeSinceStartup - begin < 0.8f)
+            {
+                var t = (Time.realtimeSinceStartup - begin) / 0.8f;
+                hand.transform.position = Vector3.Lerp(through, restPosition, t);
+                hand.transform.rotation = Quaternion.Slerp(readyRotation, restRotation, t);
+                yield return null;
+            }
+            hand.transform.position = restPosition;
+            hand.transform.rotation = restRotation;
+            hand.SetTracking(true);
+            outcome.Detail = "thrust '" + mine.data.id + "' " + length.ToString("0.00", CultureInfo.InvariantCulture) + " m at "
+                + speed.ToString("0.0", CultureInfo.InvariantCulture) + " m/s towards the NPC's " + part.type + ", "
+                + (Vector3.Angle(thrust, Vector3.down)).ToString("0", CultureInfo.InvariantCulture) + " deg from straight down; tip "
+                + startDistance.ToString("0.00", CultureInfo.InvariantCulture) + " m from the part before, "
+                + (readyTip - target).magnitude.ToString("0.00", CultureInfo.InvariantCulture) + " m when ready (aim "
+                + from.ToString("0.00", CultureInfo.InvariantCulture) + "), closest " + closest.ToString("0.00", CultureInfo.InvariantCulture) + " m";
+        }
+
+        private static Vector3 BladeTip(Item item, Vector3 grip)
+        {
+            return item.collisionHandlers.SelectMany(h => h.damagers).Where(d => d != null)
+                .Select(d => d.transform.position).OrderByDescending(p => (p - grip).sqrMagnitude).DefaultIfEmpty(item.transform.position).First();
         }
 
         private static float _frameCap;

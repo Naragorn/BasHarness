@@ -121,6 +121,37 @@ public class CombatStepParserTests
         Assert.Equal("npc-hand", s.Steps[3].Named["from"]);
     }
 
+    [Fact]
+    public void PlayerStab_Parses()
+    {
+        var s = ScenarioParser.Parse("wait-level\nplayer-stab Torso\nplayer-stab Head section=Upper speed=3 depth=0.2 from=0.4 step=false");
+
+        Assert.Empty(s.Errors);
+        Assert.Equal(new[] { "wait-level", "player-stab", "player-stab" }, s.Steps.Select(x => x.Verb));
+        Assert.Equal("Torso", s.Steps[1].Args[0]);
+        Assert.Equal("Upper", s.Steps[2].Named["section"]);
+        Assert.Equal("3", s.Steps[2].Named["speed"]);
+        Assert.Equal("0.2", s.Steps[2].Named["depth"]);
+        Assert.Equal("0.4", s.Steps[2].Named["from"]);
+        Assert.Equal("false", s.Steps[2].Named["step"]);
+    }
+
+    [Theory]
+    [InlineData("player-stab", "expects 1")]
+    [InlineData("player-stab Torso section=Hips", "section: 'Hips' is not one of Full, Lower, Mid, Upper")]
+    [InlineData("player-stab Torso speed=0", "speed: '0' is not a number above 0")]
+    [InlineData("player-stab Torso depth=deep", "depth: 'deep' is not a number above 0")]
+    [InlineData("player-stab Torso from=0", "from: '0' is not a number above 0")]
+    [InlineData("player-stab Torso step=maybe", "step: 'maybe' is not one of true, false")]
+    [InlineData("player-stab Torso hand=left", "unknown key 'hand'")]
+    public void PlayerStabErrors_NameTheProblem(string line, string expected)
+    {
+        var s = ScenarioParser.Parse("wait-level\n" + line);
+
+        var error = Assert.Single(s.Errors);
+        Assert.Contains(expected, error);
+    }
+
     [Theory]
     [InlineData("player-grab-npc", "expects 1")]
     [InlineData("player-grab-npc RightHand hand=both", "hand: 'both' is not one of left, right")]
