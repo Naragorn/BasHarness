@@ -180,6 +180,9 @@ namespace BasHarness
                     Player.invincibility = step.Args[0] == "true";
                     outcome.Detail = "Player.invincibility = " + Player.invincibility;
                     return Nothing();
+                case "npc-tk-throw":
+                    NpcTkThrow(step, outcome);
+                    return Nothing();
                 case "player-cast":
                     return PlayerCast(step, outcome);
                 case "player-skill":
@@ -555,6 +558,45 @@ namespace BasHarness
             _runRatio = -1f;
             Player.local?.locomotion?.MoveStop();
             outcome.Detail = "stopped";
+        }
+
+        /// <summary>
+        /// Stands in for a telekinesis throw of the spawned NPC by the player's right hand: the NPC is destabilized, every
+        /// part gets speed m/s (default 8) away from the player and slightly up, then the game's own static
+        /// SpellTelekinesis.onTelekinesisUngrabEvent is raised (through reflection: a C# event cannot be raised from outside
+        /// its class) with that hand's caster and telekinesis, a HandleRagdoll of the NPC and thrown = true. Tests a mod's
+        /// listening and the flight; a real telekinesis grab and swing need the headset.
+        /// </summary>
+        private void NpcTkThrow(Step step, Outcome outcome)
+        {
+            var player = Player.currentCreature;
+            if (player == null || _npc == null || _npc.ragdoll == null)
+            {
+                outcome.Fail(player == null ? "no player (wait-level first)" : "no NPC (spawn-npc first)");
+                return;
+            }
+            var caster = player.handRight?.caster;
+            var tk = caster?.telekinesis;
+            var handle = _npc.GetComponentsInChildren<HandleRagdoll>().FirstOrDefault();
+            if (tk == null || handle == null)
+            {
+                outcome.Fail(tk == null ? "the player's right hand has no telekinesis" : "the NPC has no ragdoll handle");
+                return;
+            }
+            var away = _npc.transform.position - player.transform.position;
+            away.y = 0f;
+            var dir = ((away.sqrMagnitude > 1e-4f ? away.normalized : player.transform.forward) + (Vector3.up * 0.3f)).normalized;
+            var speed = Number(step, "speed", 8f);
+            _npc.ragdoll.SetState(Ragdoll.State.Destabilized);
+            foreach (var part in _npc.ragdoll.parts)
+            {
+                part.physicBody?.AddForce(dir * speed, ForceMode.VelocityChange);
+            }
+            var field = typeof(ThunderRoad.Skill.SpellPower.SpellTelekinesis).GetField("onTelekinesisUngrabEvent", BindingFlags.Static | BindingFlags.NonPublic | BindingFlags.Public);
+            var raise = field?.GetValue(null) as Delegate;
+            raise?.DynamicInvoke(caster, tk, Side.Right, handle, true);
+            outcome.Detail = _npc.name + " flung at " + speed.ToString("0.#", CultureInfo.InvariantCulture) + " m/s, release event "
+                + (field == null ? "NOT FOUND" : raise == null ? "has no listener" : "raised to " + raise.GetInvocationList().Length + " listener(s)");
         }
 
         /// <summary>

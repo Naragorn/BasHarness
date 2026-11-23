@@ -182,6 +182,8 @@ public class CombatStepParserTests
     [InlineData("turn-player", "expects 1")]
     [InlineData("player-invincible", "expects 1")]
     [InlineData("player-invincible yes", "'yes' is not one of true, false")]
+    [InlineData("npc-tk-throw now", "expects 0")]
+    [InlineData("npc-tk-throw speed=far", "speed: 'far' is not a number")]
     [InlineData("player-cast", "expects 1")]
     [InlineData("player-cast Ice", "'Ice' is not one of Fire, Lightning, Gravity")]
     [InlineData("player-cast Fire speed=fast", "speed: 'fast' is not a number")]
@@ -217,6 +219,15 @@ public class CombatStepParserTests
         Assert.Equal(new[] { "Fire", "Lightning", "Gravity" }, s.Steps.Skip(1).Select(x => x.Args[0]));
         Assert.Equal("12", s.Steps[1].Named["speed"]);
         Assert.Equal("left", s.Steps[2].Named["hand"]);
+    }
+
+    [Fact]
+    public void NpcTkThrow_TakesAnOptionalSpeed()
+    {
+        var s = ScenarioParser.Parse("wait-level\nnpc-tk-throw\nnpc-tk-throw speed=6");
+
+        Assert.Empty(s.Errors);
+        Assert.Equal("6", s.Steps[2].Named["speed"]);
     }
 
     [Fact]

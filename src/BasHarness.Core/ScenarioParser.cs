@@ -157,6 +157,7 @@ namespace BasHarness.Core
             {
                 Validate = (a, n) => a[0] == "true" || a[0] == "false" ? null : "'" + a[0] + "' is not one of true, false",
             },
+            ["npc-tk-throw"] = new Spec(0, 0, false, "speed") { Validate = (a, n) => NumberKey(n, "speed") },
             ["player-cast"] = new Spec(1, 1, false, "speed", "hand")
             {
                 Validate = (a, n) => (a[0] == "Fire" || a[0] == "Lightning" || a[0] == "Gravity" ? null : "'" + a[0] + "' is not one of Fire, Lightning, Gravity")
