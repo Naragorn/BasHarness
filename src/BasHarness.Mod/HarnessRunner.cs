@@ -1362,6 +1362,28 @@ namespace BasHarness
                 + from.ToString("0.00", CultureInfo.InvariantCulture) + "), closest " + closest.ToString("0.00", CultureInfo.InvariantCulture) + " m";
         }
 
+        /// <summary>An item's blade: the colliders of its slash damagers (a damager's own collider, else its group's).</summary>
+        private static List<Collider> BladeColliders(Item item)
+        {
+            var colliders = new List<Collider>();
+            foreach (var damager in item.collisionHandlers.SelectMany(h => h.damagers))
+            {
+                if (damager == null || damager.data?.damageModifierData == null || damager.data.damageModifierData.damageType != DamageType.Slash)
+                {
+                    continue;
+                }
+                if (damager.colliderOnly != null)
+                {
+                    colliders.Add(damager.colliderOnly);
+                }
+                else if (damager.colliderGroup != null)
+                {
+                    colliders.AddRange(damager.colliderGroup.colliders.Where(c => c != null));
+                }
+            }
+            return colliders;
+        }
+
         private static Vector3 BladeTip(Item item, Vector3 grip)
         {
             return item.collisionHandlers.SelectMany(h => h.damagers).Where(d => d != null)
@@ -1588,15 +1610,30 @@ namespace BasHarness
                 hand.transform.position = rest + (side * (swing * swept));
                 yield return null;
             }
+            // The touching parts, as the game's collision names them: the NPC's blade always, the player's blade or (on=handle)
+            // a collider of the player's weapon that is not blade (handle, guard, pommel).
+            var onHandle = step.Named.TryGetValue("on", out var onText) && onText == "handle";
+            var npcBlade = BladeColliders(npcItem).FirstOrDefault();
+            var playerBlade = BladeColliders(playerItem);
+            var playerPart = onHandle
+                ? playerItem.colliderGroups.Where(g => g != null).SelectMany(g => g.colliders).FirstOrDefault(c => c != null && !playerBlade.Contains(c))
+                : playerBlade.FirstOrDefault();
+            if (npcBlade == null || playerPart == null)
+            {
+                outcome.Fail(npcBlade == null ? "the NPC's weapon has no blade collider" : "the player's weapon has no " + (onHandle ? "collider outside its blade" : "blade collider"));
+                yield break;
+            }
             var hit = new CollisionInstance(new DamageStruct(DamageType.Blunt, 0f))
             {
-                sourceColliderGroup = npcItem.colliderGroups.FirstOrDefault(),
-                targetColliderGroup = playerItem.colliderGroups.FirstOrDefault(),
+                sourceCollider = npcBlade,
+                targetCollider = playerPart,
+                sourceColliderGroup = npcItem.colliderGroups.FirstOrDefault(g => g != null && g.colliders.Contains(npcBlade)),
+                targetColliderGroup = playerItem.colliderGroups.FirstOrDefault(g => g != null && g.colliders.Contains(playerPart)),
                 impactVelocity = (player.transform.position - _npc.transform.position).normalized * 3f,
                 contactPoint = point,
             };
             EventManager.InvokeCreatureAttackParried(_npc, npcItem, player, playerItem, hit);
-            outcome.Detail = "'" + npcItem.data.id + "' blocked by '" + playerItem.data.id + "' at " + point.ToString("F2") + " (" + Number(step, "offset", 0f).ToString("0.##", CultureInfo.InvariantCulture) + " m along the blade from its middle)"
+            outcome.Detail = "'" + npcItem.data.id + "' (" + npcBlade.name + ") blocked by '" + playerItem.data.id + "' (" + playerPart.name + (onHandle ? ", not blade" : ", blade") + ") at " + point.ToString("F2") + " (" + Number(step, "offset", 0f).ToString("0.##", CultureInfo.InvariantCulture) + " m along the blade from its middle)"
                 + (swing > 0f ? "; the right controller swept " + (swing * swept).ToString("0.00", CultureInfo.InvariantCulture) + " m in " + swept.ToString("0.00", CultureInfo.InvariantCulture) + " s before it" : "");
             if (swing > 0f)
             {

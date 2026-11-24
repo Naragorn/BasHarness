@@ -140,6 +140,16 @@ public class CombatStepParserTests
     }
 
     [Fact]
+    public void PlayerParryOn_Parses()
+    {
+        var s = ScenarioParser.Parse("wait-level\nplayer-parry on=handle\nplayer-parry on=blade swing=5");
+
+        Assert.Empty(s.Errors);
+        Assert.Equal("handle", s.Steps[1].Named["on"]);
+        Assert.Equal("blade", s.Steps[2].Named["on"]);
+    }
+
+    [Fact]
     public void PlayerStab_Parses()
     {
         var s = ScenarioParser.Parse("wait-level\nplayer-stab Torso\nplayer-stab Head section=Upper speed=3 depth=0.2 from=0.4 step=false");
@@ -221,6 +231,7 @@ public class CombatStepParserTests
     [InlineData("player-parry now", "expects 0")]
     [InlineData("player-parry offset=x", "offset: 'x' is not a number")]
     [InlineData("player-parry swing=hard", "swing: 'hard' is not a number")]
+    [InlineData("player-parry on=hilt", "on: 'hilt' is not one of blade, handle")]
     [InlineData("player-release now", "expects 0")]
     [InlineData("player-strike-weapon twist=fast", "twist: 'fast' is not a number")]
     [InlineData("record-start", "expects 1")]
