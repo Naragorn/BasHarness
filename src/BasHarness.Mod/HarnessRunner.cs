@@ -1478,7 +1478,9 @@ namespace BasHarness
                 outcome.Fail(player == null ? "no player creature" : "no ItemData '" + step.Args[0] + "' in the catalog");
                 yield break;
             }
-            var side = step.Named.TryGetValue("hand", out var handText) && handText.Equals("left", StringComparison.OrdinalIgnoreCase) ? Side.Left : Side.Right;
+            step.Named.TryGetValue("hand", out var handText);
+            var both = "both".Equals(handText, StringComparison.OrdinalIgnoreCase);
+            var side = "left".Equals(handText, StringComparison.OrdinalIgnoreCase) ? Side.Left : Side.Right;
             var hand = player.GetHand(side);
             Item item = null;
             data.SpawnAsync(i => item = i, hand.transform.position, hand.transform.rotation, null, false, null);
@@ -1501,6 +1503,28 @@ namespace BasHarness
             if (!item.handlers.Contains(hand))
             {
                 outcome.Fail("the player's " + side + " hand did not grab '" + step.Args[0] + "'");
+                yield break;
+            }
+            if (both)
+            {
+                // The left hand takes the same item too, at its own main handle (for a long grip the same handle, as a
+                // player's second hand on a sword's grip). The game lets go of the first hand when the handle has no length
+                // (Handle.OnGrab: axisLength 0 and not forceAllowTwoHanded), so a one-handed weapon fails here.
+                var left = player.GetHand(Side.Left);
+                if (Holds(left))
+                {
+                    left.TryRelease();
+                }
+                left.Grab(item.GetMainHandle(Side.Left), true);
+                yield return null;
+                yield return null;
+                if (!item.IsTwoHanded())
+                {
+                    outcome.Fail("'" + step.Args[0] + "' is not held with both hands (right " + item.handlers.Contains(hand) + ", left "
+                        + item.handlers.Contains(left) + "): its grip may be too short for two hands");
+                    yield break;
+                }
+                outcome.Detail = "player holds '" + step.Args[0] + "' with both hands (Item.IsTwoHanded)";
                 yield break;
             }
             outcome.Detail = "player's " + side + " hand holds '" + step.Args[0] + "'";

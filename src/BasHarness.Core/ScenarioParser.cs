@@ -113,7 +113,7 @@ namespace BasHarness.Core
             {
                 Validate = (a, n) => TryParseNumber(a[0], out _) ? null : "'" + a[0] + "' is not a number of degrees",
             },
-            ["player-grab"] = new Spec(1, 1, false, "hand") { Validate = (a, n) => OneOf(n, "hand", new[] { "left", "right" }) },
+            ["player-grab"] = new Spec(1, 1, false, "hand") { Validate = (a, n) => OneOf(n, "hand", new[] { "left", "right", "both" }) },
             ["player-grab-npc"] = new Spec(1, 1, false, "section", "hand")
             {
                 Validate = (a, n) => OneOf(n, "hand", new[] { "left", "right" }) ?? OneOf(n, "section", PartSections),

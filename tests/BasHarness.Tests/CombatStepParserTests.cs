@@ -122,6 +122,24 @@ public class CombatStepParserTests
     }
 
     [Fact]
+    public void PlayerGrab_BothHands_Parses()
+    {
+        var s = ScenarioParser.Parse("wait-level\nplayer-grab SwordLongCommon hand=both");
+
+        Assert.Empty(s.Errors);
+        Assert.Equal("both", s.Steps[1].Named["hand"]);
+    }
+
+    [Fact]
+    public void PlayerGrab_UnknownHand_NamesTheChoices()
+    {
+        var s = ScenarioParser.Parse("wait-level\nplayer-grab SwordLongCommon hand=three");
+
+        var error = Assert.Single(s.Errors);
+        Assert.Contains("hand: 'three' is not one of left, right, both", error);
+    }
+
+    [Fact]
     public void PlayerStab_Parses()
     {
         var s = ScenarioParser.Parse("wait-level\nplayer-stab Torso\nplayer-stab Head section=Upper speed=3 depth=0.2 from=0.4 step=false");
@@ -199,7 +217,7 @@ public class CombatStepParserTests
     [InlineData("hit-npc Torso at=0,1", "at: '0,1' is not three numbers right,up,forward")]
     [InlineData("hit-npc Torso section=Hips", "section: 'Hips' is not one of Full, Lower, Mid, Upper")]
     [InlineData("player-grab", "expects 1")]
-    [InlineData("player-grab SwordShortCommon hand=both", "hand: 'both' is not one of left, right")]
+    [InlineData("player-grab SwordShortCommon hand=two", "hand: 'two' is not one of left, right, both")]
     [InlineData("player-parry now", "expects 0")]
     [InlineData("player-parry offset=x", "offset: 'x' is not a number")]
     [InlineData("player-parry swing=hard", "swing: 'hard' is not a number")]
