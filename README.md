@@ -60,7 +60,7 @@ the first FAIL; the game quits by itself at the end.
 | `option-exists <mod> <name> [category= display= type= save= interaction= tooltip=]` | a ModOption with these properties; `display` is the title the mods page shows (localised); `tooltip` matches a part |
 | `set-option <mod> <name> <value>` | apply a value (by value or menu title), the same call the mods page makes |
 | `press <mod> <name>` | press a button option (next value, wrapping, like the mods page) |
-| `expect-option <mod> <name> <value>` | the menu value **and** the member it drives hold `<value>` |
+| `expect-option <mod> <name> <value>` | the menu value **and** the member it drives hold `<value>` (value text, number or menu title; an enum member is compared by its number, so enum values with own menu titles work) |
 | `save-options` | save options the way closing the player menu does |
 | `screenshot <name> [of=npc] [distance=2.5] [height=1.2] [angle=0]` | PNG of the game view into the run folder. With `of=npc`: a picture of the spawned NPC from a temporary camera `distance` m from its root part, `height` m above it, `angle` degrees clockwise around it from the player's side, looking at it (the game view follows the player's head and often misses an NPC lying at its feet) |
 | `quit` | end here |

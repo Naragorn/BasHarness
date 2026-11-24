@@ -433,9 +433,10 @@ namespace BasHarness
                 outcome.Fail("menu value is '" + shown + "', expected '" + step.Args[2] + "'");
                 return;
             }
-            // The member the option drives must hold the same value (live state, not just the menu).
-            var live = ReadMember(option);
-            if (live != null && ValueMatcher.IndexOf(new[] { values[current] }, live) != 0)
+            // The member the option drives must hold the same value (live state, not just the menu). An enum member is
+            // compared by its number: a mod may give its enum values own menu titles (ModOptionInt "Fists, Kicks" = 0).
+            var live = ReadMember(option, out var liveKey);
+            if (live != null && ValueMatcher.IndexOf(new[] { values[current] }, liveKey) != 0)
             {
                 outcome.Fail("menu value '" + shown + "' but the member holds '" + live + "'");
                 return;
@@ -443,17 +444,25 @@ namespace BasHarness
             outcome.Detail = "menu '" + shown + "', member '" + (live ?? "(method)") + "'";
         }
 
-        private static string ReadMember(ModOption option)
+        /// <summary>The member's value as text; <paramref name="key"/> is what it is matched by (an enum's number).</summary>
+        private static string ReadMember(ModOption option, out string key)
         {
+            object value;
             switch (option.member)
             {
                 case FieldInfo field when field.IsStatic:
-                    return Convert.ToString(field.GetValue(null), CultureInfo.InvariantCulture);
+                    value = field.GetValue(null);
+                    break;
                 case PropertyInfo property when property.GetGetMethod(true)?.IsStatic == true:
-                    return Convert.ToString(property.GetValue(null, null), CultureInfo.InvariantCulture);
+                    value = property.GetValue(null, null);
+                    break;
                 default:
+                    key = null;
                     return null;
             }
+            var text = Convert.ToString(value, CultureInfo.InvariantCulture);
+            key = value is Enum ? Convert.ToInt64(value, CultureInfo.InvariantCulture).ToString(CultureInfo.InvariantCulture) : text;
+            return text;
         }
 
         private const float SpawnTimeout = 30f;
