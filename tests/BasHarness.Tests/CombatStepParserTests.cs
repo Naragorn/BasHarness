@@ -26,7 +26,7 @@ public class CombatStepParserTests
             "player-push 0.15 2.2 back=false",
             "player-release hand=right",
             "player-strike-weapon twist=600 seconds=0.3 approach=0.3 settle=0.2 phase=ready",
-            "record-start twist fps=60 width=640 height=360 views=side,first,npc,hand distance=2 rise=0.6 angle=90",
+            "record-start twist fps=60 width=640 height=360 views=side,first,npc,hand distance=2 rise=0.6 angle=90 audio=true",
             "record-stop",
             "frame-rate 90",
             "npc-grab DaggerCommon",
@@ -238,6 +238,7 @@ public class CombatStepParserTests
     [InlineData("record-start x fps=fast", "fps: 'fast'")]
     [InlineData("record-start x views=side,top", "views: 'side,top' is not a list of side, first, npc, hand")]
     [InlineData("record-start x rise=up", "rise: 'up' is not a number")]
+    [InlineData("record-start x audio=yes", "audio: 'yes' is not one of true, false")]
     [InlineData("record-stop now", "expects 0")]
     [InlineData("frame-rate", "expects 1")]
     [InlineData("frame-rate fast", "'fast' is not a whole number of frames per second above 0")]

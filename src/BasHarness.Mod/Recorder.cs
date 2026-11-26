@@ -18,6 +18,7 @@ namespace BasHarness
     /// close-up of the player's right hand and blade from the side, for wrist gestures.
     /// Pictures are read back from the GPU without waiting (AsyncGPUReadback) and appended by a background thread to one
     /// raw RGBA file per view, at a fixed frame rate in real time (FilmFrames); the runner turns them into videos.
+    /// With sound (audio=true) the game's mix as the player hears it comes along from the same moment on (SoundTap).
     /// </summary>
     internal sealed class Recorder
     {
@@ -38,6 +39,7 @@ namespace BasHarness
         private readonly BlockingCollection<(int View, int Slot, byte[] Data)> _queue = new BlockingCollection<(int, int, byte[])>();
         private readonly Thread _writer;
         private readonly bool _async;
+        private readonly SoundTap _sound;
         private float _startedAt;
         private int _lastRequested = -1;
         private int _repeated;
@@ -45,7 +47,7 @@ namespace BasHarness
         private bool _running;
 
         public Recorder(string name, string dir, int fps, int width, int height, string[] views, Func<Creature> npc,
-            float npcDistance, float npcRise, float npcAngle)
+            float npcDistance, float npcRise, float npcAngle, bool audio)
         {
             _npcDistance = npcDistance;
             _npcRise = npcRise;
@@ -80,15 +82,17 @@ namespace BasHarness
             }
             _writer = new Thread(Write) { IsBackground = true, Name = "BasHarness film writer" };
             _writer.Start();
+            _sound = audio ? SoundTap.Attach(Path.Combine(dir, name + ".f32")) : null;
         }
 
         public string Describe => _views.Length + " view(s) " + string.Join(", ", _views) + " at " + _width + "x" + _height + ", " + _fps
-            + " fps, readback " + (_async ? "async" : "sync") + "; " + HeadRenderer.Found;
+            + " fps, readback " + (_async ? "async" : "sync") + "; " + HeadRenderer.Found + (_sound != null ? "; sound " + _sound.Describe : string.Empty);
 
         public System.Collections.IEnumerator Run()
         {
             _running = true;
             _startedAt = Time.realtimeSinceStartup;
+            _sound?.Arm();
             while (_running)
             {
                 yield return null;
@@ -115,6 +119,7 @@ namespace BasHarness
         public string Stop()
         {
             _running = false;
+            var sound = _sound?.Stop();
             if (_async)
             {
                 AsyncGPUReadback.WaitAllRequests();
@@ -137,9 +142,11 @@ namespace BasHarness
                 UnityEngine.Object.Destroy(_textures[i]);
             }
             var frames = _lastWritten.Length > 0 ? _lastWritten[0] + 1 : 0;
-            File.WriteAllText(Path.Combine(_dir, _name + ".film.json"), FilmFrames.Sidecar(_name, _width, _height, _fps, _views, frames, _repeated));
+            var heard = sound != null && sound.Samples > 0;
+            File.WriteAllText(Path.Combine(_dir, _name + ".film.json"), FilmFrames.Sidecar(_name, _width, _height, _fps, _views, frames, _repeated,
+                heard ? sound.Rate : 0, heard ? sound.Channels : 0));
             return _name + ": " + frames + " frames (" + (frames / (float)_fps).ToString("0.0", System.Globalization.CultureInfo.InvariantCulture)
-                + " s), " + _repeated + " repeated because the game was slower than " + _fps + " fps";
+                + " s), " + _repeated + " repeated because the game was slower than " + _fps + " fps" + (sound != null ? "; sound: " + sound.Summary : string.Empty);
         }
 
         private void Capture(int view, int slot)
@@ -269,6 +276,106 @@ namespace BasHarness
                 cam.fieldOfView = 55f;
                 cam.transform.position = middle + (across * 3.0f) + (Vector3.up * 1.2f);
                 cam.transform.LookAt(middle + (Vector3.up * 0.95f));
+            }
+        }
+    }
+
+    /// <summary>
+    /// The game's sound for a film: the mix the active AudioListener hears (every source and mixer group, after the
+    /// master), taken in OnAudioFilterRead on the listener's own object and appended by a background thread to one raw
+    /// file of 32-bit float samples, interleaved. The sound passes on untouched. Samples count from Arm (the film's
+    /// first moment) to Stop; the audio thread hands them over in blocks of a few milliseconds.
+    /// </summary>
+    internal sealed class SoundTap : MonoBehaviour
+    {
+        private readonly BlockingCollection<float[]> _blocks = new BlockingCollection<float[]>();
+        private FileStream _file;
+        private Thread _writer;
+        private volatile bool _armed;
+        private long _samples;
+        private int _channels;
+
+        public string Describe { get; private set; } = "off";
+
+        public int Rate { get; private set; }
+
+        public int Channels => Volatile.Read(ref _channels);
+
+        public long Samples => Interlocked.Read(ref _samples);
+
+        public string Summary => Samples == 0
+            ? "nothing heard (" + Describe + ")"
+            : (Samples / (double)Math.Max(1, Rate) / Math.Max(1, Channels)).ToString("0.00", System.Globalization.CultureInfo.InvariantCulture)
+                + " s at " + Rate + " Hz, " + Channels + " channel(s)";
+
+        /// <summary>Puts a tap on the object of the first active and enabled AudioListener; null when there is none (the film stays silent).</summary>
+        public static SoundTap Attach(string path)
+        {
+            var listener = UnityEngine.Object.FindObjectsOfType<AudioListener>().FirstOrDefault(l => l.isActiveAndEnabled);
+            if (listener == null)
+            {
+                Debug.Log("[BasHarness] film sound: no active AudioListener, the film stays silent");
+                return null;
+            }
+            var tap = listener.gameObject.AddComponent<SoundTap>();
+            tap.Rate = AudioSettings.outputSampleRate;
+            tap._file = new FileStream(path, FileMode.Create, FileAccess.Write, FileShare.Read, 1 << 20);
+            tap._writer = new Thread(tap.Write) { IsBackground = true, Name = "BasHarness film sound writer" };
+            tap._writer.Start();
+            tap.Describe = "from the AudioListener on '" + listener.name + "' at " + tap.Rate + " Hz, listener volume "
+                + AudioListener.volume.ToString("0.00", System.Globalization.CultureInfo.InvariantCulture) + (AudioListener.pause ? ", paused" : string.Empty);
+            return tap;
+        }
+
+        /// <summary>From now on every sample counts (not Unity's Start, which would arm it a frame later on its own).</summary>
+        public void Arm()
+        {
+            _armed = true;
+        }
+
+        /// <summary>Stops taking samples, writes what is left and closes the file; the tap leaves the listener.</summary>
+        public SoundTap Stop()
+        {
+            _armed = false;
+            _blocks.CompleteAdding();
+            _writer.Join(TimeSpan.FromSeconds(30));
+            _file.Dispose();
+            Destroy(this);
+            return this;
+        }
+
+        private void OnAudioFilterRead(float[] data, int channels)
+        {
+            if (!_armed || _blocks.IsAddingCompleted)
+            {
+                return;
+            }
+            Volatile.Write(ref _channels, channels);
+            var copy = new float[data.Length];
+            Array.Copy(data, copy, data.Length);
+            try
+            {
+                _blocks.Add(copy);
+            }
+            catch (InvalidOperationException)
+            {
+                // Stop came between the check and the add.
+            }
+        }
+
+        private void Write()
+        {
+            var bytes = new byte[0];
+            foreach (var block in _blocks.GetConsumingEnumerable())
+            {
+                var size = block.Length * sizeof(float);
+                if (bytes.Length < size)
+                {
+                    bytes = new byte[size];
+                }
+                Buffer.BlockCopy(block, 0, bytes, 0, size);
+                _file.Write(bytes, 0, size);
+                Interlocked.Add(ref _samples, block.Length);
             }
         }
     }

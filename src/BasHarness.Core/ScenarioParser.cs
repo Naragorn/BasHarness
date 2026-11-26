@@ -143,10 +143,10 @@ namespace BasHarness.Core
                 Validate = (a, n) => NumberKey(n, "twist") ?? SecondsKey(n, "seconds") ?? SecondsKey(n, "approach") ?? SecondsKey(n, "settle") ?? NumberKey(n, "depth")
                     ?? OneOf(n, "phase", new[] { "all", "ready", "strike" }),
             },
-            ["record-start"] = new Spec(1, 1, false, "fps", "width", "height", "views", "distance", "rise", "angle")
+            ["record-start"] = new Spec(1, 1, false, "fps", "width", "height", "views", "distance", "rise", "angle", "audio")
             {
                 Validate = (a, n) => WholeKey(n, "fps") ?? WholeKey(n, "width") ?? WholeKey(n, "height")
-                    ?? NumberKey(n, "distance") ?? NumberKey(n, "rise") ?? NumberKey(n, "angle")
+                    ?? NumberKey(n, "distance") ?? NumberKey(n, "rise") ?? NumberKey(n, "angle") ?? OneOf(n, "audio", new[] { "true", "false" })
                     ?? (n.TryGetValue("views", out var v) && v.Split(',').Any(x => x != "side" && x != "first" && x != "npc" && x != "hand")
                         ? "views: '" + v + "' is not a list of side, first, npc, hand"
                         : null),

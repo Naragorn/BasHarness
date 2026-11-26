@@ -38,4 +38,18 @@ public class FilmFramesTests
             FilmFrames.Sidecar("twist", 640, 360, 60, new[] { "side", "first" }, 120, 3));
         Assert.Contains("\"name\":\"a\\\"b\"", FilmFrames.Sidecar("a\"b", 1, 1, 1, new string[0], 0, 0));
     }
+
+    [Fact]
+    public void Sidecar_WithSound_NamesItsRateAndChannels()
+    {
+        Assert.Equal(
+            "{\"name\":\"hit\",\"width\":960,\"height\":540,\"fps\":30,\"views\":[\"npc\"],\"frames\":90,\"repeated\":0,\"audio\":{\"rate\":48000,\"channels\":2}}",
+            FilmFrames.Sidecar("hit", 960, 540, 30, new[] { "npc" }, 90, 0, 48000, 2));
+    }
+
+    [Theory]
+    [InlineData(0, 2)]
+    [InlineData(48000, 0)]
+    public void Sidecar_WithoutSound_HasNoAudio(int rate, int channels) =>
+        Assert.DoesNotContain("audio", FilmFrames.Sidecar("hit", 1, 1, 1, new[] { "npc" }, 1, 0, rate, channels));
 }

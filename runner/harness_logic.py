@@ -216,28 +216,44 @@ def film_commands(film: Dict, folder: str, ffmpeg: str = "ffmpeg") -> List[List[
 
     Per view a real-pace MP4 (the raw pictures come bottom row first, so they are flipped); with two views also both
     side by side; then the side-by-side (or the single view) slowed down 4x as MP4, a real-pace GIF and, for short
-    films, a slow GIF.
+    films, a slow GIF. A film with sound (record-start audio=true: "audio" with rate and channels) first gets
+    <name>.wav from the raw samples, and the real-pace MP4s carry it; the slow MP4 stays silent.
     """
     name, w, h, fps, views = film["name"], int(film["width"]), int(film["height"]), int(film["fps"]), list(film["views"])
     if not views or int(film.get("frames", 0)) <= 0:
         return []
     p = lambda f: folder.rstrip("/") + "/" + f  # noqa: E731
     h264 = ["-c:v", "libx264", "-pix_fmt", "yuv420p", "-crf", "20"]
+    audio = film.get("audio") or {}
+    rate, channels = int(audio.get("rate", 0)), int(audio.get("channels", 0))
+    sound = rate > 0 and channels > 0
+    aac = ["-c:a", "aac", "-b:a", "192k"]
     calls: List[List[str]] = []
+    if sound:
+        calls.append([ffmpeg, "-y", "-loglevel", "error", "-f", "f32le", "-ar", str(rate), "-ac", str(channels),
+                      "-i", p(f"{name}.f32"), "-c:a", "pcm_s16le", p(f"{name}.wav")])
     for view in views:
+        with_sound = ["-i", p(f"{name}.wav"), *aac] if sound else []
         calls.append([ffmpeg, "-y", "-loglevel", "error", "-f", "rawvideo", "-pix_fmt", "rgba", "-s", f"{w}x{h}",
-                      "-r", str(fps), "-i", p(f"{name}-{view}.rgba"), "-vf", "vflip", *h264, p(f"{name}-{view}.mp4")])
+                      "-r", str(fps), "-i", p(f"{name}-{view}.rgba"), *with_sound, "-vf", "vflip", *h264,
+                      p(f"{name}-{view}.mp4")])
     if len(views) > 1:
         inputs: List[str] = []
         for view in views:
             inputs += ["-i", p(f"{name}-{view}.mp4")]
-        calls.append([ffmpeg, "-y", "-loglevel", "error", *inputs, "-filter_complex", f"hstack=inputs={len(views)}",
-                      *h264, p(f"{name}.mp4")])
+        if sound:
+            stack = "".join(f"[{i}:v]" for i in range(len(views))) + f"hstack=inputs={len(views)}[v]"
+            calls.append([ffmpeg, "-y", "-loglevel", "error", *inputs, "-filter_complex", stack,
+                          "-map", "[v]", "-map", "0:a", *h264, "-c:a", "copy", p(f"{name}.mp4")])
+        else:
+            calls.append([ffmpeg, "-y", "-loglevel", "error", *inputs, "-filter_complex", f"hstack=inputs={len(views)}",
+                          *h264, p(f"{name}.mp4")])
         main = p(f"{name}.mp4")
     else:
         main = p(f"{name}-{views[0]}.mp4")
+    silent = ["-an"] if sound else []
     calls.append([ffmpeg, "-y", "-loglevel", "error", "-i", main, "-vf", f"setpts={SLOW_FACTOR}*PTS", "-r", str(fps),
-                  *h264, p(f"{name}-slow.mp4")])
+                  *silent, *h264, p(f"{name}-slow.mp4")])
     calls.append([ffmpeg, "-y", "-loglevel", "error", "-i", main, "-vf", GIF_FILTER, p(f"{name}.gif")])
     if int(film["frames"]) / fps <= SLOW_GIF_MAX_SECONDS:
         calls.append([ffmpeg, "-y", "-loglevel", "error", "-i", p(f"{name}-slow.mp4"), "-vf", GIF_FILTER, p(f"{name}-slow.gif")])

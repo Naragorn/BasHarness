@@ -28,6 +28,7 @@
     <Reference Include="UnityEngine.ScreenCaptureModule"><HintPath>$(BasManagedDir)/UnityEngine.ScreenCaptureModule.dll</HintPath><Private>false</Private></Reference>
     <Reference Include="Unity.RenderPipelines.Universal.Runtime"><HintPath>$(BasManagedDir)/Unity.RenderPipelines.Universal.Runtime.dll</HintPath><Private>false</Private></Reference>
     <Reference Include="UnityEngine.PhysicsModule"><HintPath>$(BasManagedDir)/UnityEngine.PhysicsModule.dll</HintPath><Private>false</Private></Reference>
+    <Reference Include="UnityEngine.AudioModule"><HintPath>$(BasManagedDir)/UnityEngine.AudioModule.dll</HintPath><Private>false</Private></Reference>
   </ItemGroup>
 
   <ItemGroup>

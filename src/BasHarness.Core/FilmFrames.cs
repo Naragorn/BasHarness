@@ -21,8 +21,13 @@ namespace BasHarness.Core
         /// </summary>
         public static int Writes(int slot, int lastWritten) => slot <= lastWritten ? 0 : slot - lastWritten;
 
-        /// <summary>The film's description for the runner, which turns the raw pictures into videos (one JSON object).</summary>
-        public static string Sidecar(string name, int width, int height, int fps, string[] views, int frames, int repeated)
+        /// <summary>
+        /// The film's description for the runner, which turns the raw pictures into videos (one JSON object). With
+        /// <paramref name="audioRate"/> and <paramref name="audioChannels"/> above 0 the film has sound: the game's mix as
+        /// raw 32-bit float samples, interleaved (record-start audio=true).
+        /// </summary>
+        public static string Sidecar(string name, int width, int height, int fps, string[] views, int frames, int repeated,
+            int audioRate = 0, int audioChannels = 0)
         {
             var sb = new StringBuilder();
             sb.Append("{\"name\":\"").Append(Escape(name)).Append("\",\"width\":").Append(width.ToString(CultureInfo.InvariantCulture))
@@ -34,8 +39,13 @@ namespace BasHarness.Core
                 sb.Append(i > 0 ? "," : string.Empty).Append('"').Append(Escape(views[i])).Append('"');
             }
             sb.Append("],\"frames\":").Append(frames.ToString(CultureInfo.InvariantCulture))
-                .Append(",\"repeated\":").Append(repeated.ToString(CultureInfo.InvariantCulture)).Append('}');
-            return sb.ToString();
+                .Append(",\"repeated\":").Append(repeated.ToString(CultureInfo.InvariantCulture));
+            if (audioRate > 0 && audioChannels > 0)
+            {
+                sb.Append(",\"audio\":{\"rate\":").Append(audioRate.ToString(CultureInfo.InvariantCulture))
+                    .Append(",\"channels\":").Append(audioChannels.ToString(CultureInfo.InvariantCulture)).Append('}');
+            }
+            return sb.Append('}').ToString();
         }
 
         private static string Escape(string s) => (s ?? string.Empty).Replace("\\", "\\\\").Replace("\"", "\\\"");

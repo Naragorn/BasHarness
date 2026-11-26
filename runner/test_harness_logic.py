@@ -229,6 +229,38 @@ class FilmCommandsTests(unittest.TestCase):
         self.assertIn("fps=12", vf)
         self.assertIn("min(640,iw)", vf)
 
+    def test_a_film_with_sound_gets_a_wav_and_the_sound_in_the_real_pace_videos(self):
+        film = dict(self.FILM, audio={"rate": 48000, "channels": 2})
+        calls = logic.film_commands(film, "/d")
+        outs = [c[-1] for c in calls]
+        self.assertEqual(outs, ["/d/twist.wav", "/d/twist-side.mp4", "/d/twist-first.mp4", "/d/twist.mp4",
+                                "/d/twist-slow.mp4", "/d/twist.gif", "/d/twist-slow.gif"])
+        wav = calls[0]
+        self.assertEqual(wav[wav.index("-f") + 1], "f32le")
+        self.assertEqual(wav[wav.index("-ar") + 1], "48000")
+        self.assertEqual(wav[wav.index("-ac") + 1], "2")
+        self.assertEqual(wav[wav.index("-i") + 1], "/d/twist.f32")
+        self.assertIn("pcm_s16le", wav)
+        for view in calls[1:3]:
+            inputs = [view[i + 1] for i, a in enumerate(view) if a == "-i"]
+            self.assertEqual(inputs[1], "/d/twist.wav")
+            self.assertIn("aac", view)
+        both = calls[3]
+        self.assertIn("[0:v][1:v]hstack=inputs=2[v]", both)
+        self.assertIn("0:a", both)
+        # The slow film has no sound: four times slower sound would not match anything heard in the game.
+        self.assertIn("-an", calls[4])
+
+    def test_a_film_without_sound_has_no_sound_in_its_videos(self):
+        for call in logic.film_commands(self.FILM, "/d"):
+            self.assertNotIn("aac", call)
+            self.assertNotIn("-an", call)
+
+    def test_sound_without_rate_or_channels_counts_as_none(self):
+        for audio in ({"rate": 0, "channels": 2}, {"rate": 48000, "channels": 0}, {}):
+            outs = [c[-1] for c in logic.film_commands(dict(self.FILM, audio=audio), "/d")]
+            self.assertNotIn("/d/twist.wav", outs)
+
     def test_an_empty_film_makes_nothing(self):
         self.assertEqual(logic.film_commands(dict(self.FILM, frames=0), "/d"), [])
         self.assertEqual(logic.film_commands(dict(self.FILM, views=[]), "/d"), [])

@@ -205,7 +205,8 @@ def run_scenario(args: argparse.Namespace, scenario: Path, mirror: Path, home: P
 
 
 def make_films(run_dir: Path) -> None:
-    """Turns every film the scenario recorded (record-start ... record-stop) into MP4 and GIF; drops the raw pictures."""
+    """Turns every film the scenario recorded (record-start ... record-stop) into MP4 and GIF (and WAV when it has
+    sound); drops the raw pictures and samples."""
     for sidecar in sorted(run_dir.glob("*.film.json")):
         film = json.loads(sidecar.read_text())
         calls = logic.film_commands(film, str(run_dir))
@@ -213,8 +214,9 @@ def make_films(run_dir: Path) -> None:
         if failed is not None:
             say(f"film {film['name']}: ffmpeg failed on {failed[-1]}; raw pictures kept")
             continue
-        for raw in run_dir.glob(f"{film['name']}-*.rgba"):
-            raw.unlink()
+        for raw in [*run_dir.glob(f"{film['name']}-*.rgba"), run_dir / f"{film['name']}.f32"]:
+            if raw.exists():
+                raw.unlink()
         say(f"film {film['name']}: {film['frames']} frames at {film['fps']} fps ({film['repeated']} repeated) -> "
             f"{run_dir / (film['name'] + ('.mp4' if len(film['views']) > 1 else '-' + film['views'][0] + '.mp4'))}")
 

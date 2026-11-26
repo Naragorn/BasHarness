@@ -1449,8 +1449,9 @@ namespace BasHarness
         private Recorder _recorder;
 
         /// <summary>
-        /// record-start &lt;name&gt; [fps=60] [width=640] [height=360] [views=side,first] [distance=2.5] [rise=1.2] [angle=0]:
-        /// films until record-stop. distance/rise/angle place the "npc" view as screenshot of=npc places its camera.
+        /// record-start &lt;name&gt; [fps=60] [width=640] [height=360] [views=side,first] [distance=2.5] [rise=1.2] [angle=0] [audio=false]:
+        /// films until record-stop. distance/rise/angle place the "npc" view as screenshot of=npc places its camera;
+        /// audio=true records the game's sound with it.
         /// </summary>
         private void RecordStart(Step step, Outcome outcome)
         {
@@ -1462,7 +1463,8 @@ namespace BasHarness
             var views = step.Named.TryGetValue("views", out var v) ? v.Split(',') : new[] { "side", "first" };
             _recorder = new Recorder(step.Args[0], _outputDir, (int)Number(step, "fps", 60f), (int)Number(step, "width", 640f),
                 (int)Number(step, "height", 360f), views, () => _npc,
-                Number(step, "distance", 2.5f), Number(step, "rise", 1.2f), Number(step, "angle", 0f));
+                Number(step, "distance", 2.5f), Number(step, "rise", 1.2f), Number(step, "angle", 0f),
+                step.Named.TryGetValue("audio", out var audio) && audio == "true");
             GameManager.local.StartCoroutine(_recorder.Run());
             outcome.Detail = "filming " + _recorder.Describe;
         }
