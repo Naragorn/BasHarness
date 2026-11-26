@@ -284,15 +284,24 @@ namespace BasHarness
     /// The game's sound for a film: the mix the active AudioListener hears (every source and mixer group, after the
     /// master), taken in OnAudioFilterRead on the listener's own object and appended by a background thread to one raw
     /// file of 32-bit float samples, interleaved. The sound passes on untouched. Samples count from Arm (the film's
-    /// first moment) to Stop; the audio thread hands them over in blocks of a few milliseconds.
+    /// first moment) to Stop; the audio thread hands them over in blocks of a few milliseconds. The sound keeps to the
+    /// film's clock: when the mixer stalls and hands over less than the time that passed, the stretch is filled with
+    /// silence (FilmSound), and the step's report names those gaps. Blocks are reused, so the tap itself adds no garbage.
     /// </summary>
     internal sealed class SoundTap : MonoBehaviour
     {
+        /// <summary>Behind the film's clock by more than this, the next block gets silence before it.</summary>
+        private const double GapTolerance = 0.04;
+
         private readonly BlockingCollection<float[]> _blocks = new BlockingCollection<float[]>();
+        private readonly ConcurrentQueue<float[]> _free = new ConcurrentQueue<float[]>();
+        private readonly FilmSound.Gaps _gaps = new FilmSound.Gaps();
+        private readonly System.Diagnostics.Stopwatch _clock = new System.Diagnostics.Stopwatch();
         private FileStream _file;
         private Thread _writer;
         private volatile bool _armed;
         private long _samples;
+        private long _framesQueued;
         private int _channels;
 
         public string Describe { get; private set; } = "off";
@@ -303,10 +312,23 @@ namespace BasHarness
 
         public long Samples => Interlocked.Read(ref _samples);
 
-        public string Summary => Samples == 0
-            ? "nothing heard (" + Describe + ")"
-            : (Samples / (double)Math.Max(1, Rate) / Math.Max(1, Channels)).ToString("0.00", System.Globalization.CultureInfo.InvariantCulture)
-                + " s at " + Rate + " Hz, " + Channels + " channel(s)";
+        public string Summary
+        {
+            get
+            {
+                if (Samples == 0)
+                {
+                    return "nothing heard (" + Describe + ")";
+                }
+                string gaps;
+                lock (_gaps)
+                {
+                    gaps = _gaps.Describe();
+                }
+                return (Samples / (double)Math.Max(1, Rate) / Math.Max(1, Channels)).ToString("0.00", System.Globalization.CultureInfo.InvariantCulture)
+                    + " s at " + Rate + " Hz, " + Channels + " channel(s), " + gaps;
+            }
+        }
 
         /// <summary>Puts a tap on the object of the first active and enabled AudioListener; null when there is none (the film stays silent).</summary>
         public static SoundTap Attach(string path)
@@ -330,6 +352,7 @@ namespace BasHarness
         /// <summary>From now on every sample counts (not Unity's Start, which would arm it a frame later on its own).</summary>
         public void Arm()
         {
+            _clock.Restart();
             _armed = true;
         }
 
@@ -351,11 +374,30 @@ namespace BasHarness
                 return;
             }
             Volatile.Write(ref _channels, channels);
-            var copy = new float[data.Length];
+            var silence = FilmSound.SilenceBefore(_framesQueued, _clock.Elapsed.TotalSeconds, Rate, GapTolerance);
+            if (silence > 0)
+            {
+                lock (_gaps)
+                {
+                    _gaps.Add(_framesQueued / (double)Rate, silence / (double)Rate);
+                }
+                Queue(new float[silence * channels]);
+                _framesQueued += silence;
+            }
+            if (!_free.TryDequeue(out var copy) || copy.Length != data.Length)
+            {
+                copy = new float[data.Length];
+            }
             Array.Copy(data, copy, data.Length);
+            Queue(copy);
+            _framesQueued += data.Length / Math.Max(1, channels);
+        }
+
+        private void Queue(float[] block)
+        {
             try
             {
-                _blocks.Add(copy);
+                _blocks.Add(block);
             }
             catch (InvalidOperationException)
             {
@@ -376,6 +418,10 @@ namespace BasHarness
                 Buffer.BlockCopy(block, 0, bytes, 0, size);
                 _file.Write(bytes, 0, size);
                 Interlocked.Add(ref _samples, block.Length);
+                if (_free.Count < 64)
+                {
+                    _free.Enqueue(block);
+                }
             }
         }
     }
